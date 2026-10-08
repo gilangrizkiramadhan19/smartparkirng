@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'pages/map_page.dart';
 import 'services/navigation_controller.dart';
 import 'services/parking_repository.dart';
+import 'services/position_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,14 +18,18 @@ class SmartParkingApp extends StatefulWidget {
 
 class _SmartParkingAppState extends State<SmartParkingApp> {
   late final ParkingRepository _repository;
+  late final PositionProvider _positionProvider;
   late final NavigationController _navigationController;
 
   @override
   void initState() {
     super.initState();
-    // Tahap 1: Menggunakan MockParkingRepository
     _repository = MockParkingRepository();
-    _navigationController = NavigationController(repository: _repository);
+    _positionProvider = SimulatedPositionProvider();
+    _navigationController = NavigationController(
+      repository: _repository,
+      positionProvider: _positionProvider,
+    );
   }
 
   @override

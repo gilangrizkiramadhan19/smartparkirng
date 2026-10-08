@@ -39,9 +39,18 @@ class _MapPageState extends State<MapPage> {
           tapX <= (slot.x + halfW) &&
           tapY >= (slot.y - halfH) &&
           tapY <= (slot.y + halfH)) {
-        _showSlotDetailModal(slot);
+        if (!widget.controller.isNavigating) {
+          _showSlotDetailModal(slot);
+        }
         return;
       }
+    }
+
+    // Jika sedang bernavigasi dalam mode manual dan menekan area kosong:
+    // Pindahkan posisi pengguna (di-snap ke graf jalan denah)
+    if (widget.controller.isNavigating &&
+        widget.controller.positionMode == NavigationPositionMode.manual) {
+      widget.controller.setManualPosition(Offset(tapX, tapY));
     }
   }
 
@@ -331,16 +340,26 @@ class _MapPageState extends State<MapPage> {
                     child: SizedBox(
                       width: mapWidth,
                       height: mapHeight,
-                      child: CustomPaint(
-                        size: Size(mapWidth, mapHeight),
-                        painter: MapPainter(
-                          layout: layout,
-                          route: ctrl.currentRoute,
-                          targetSlot: ctrl.targetSlot,
-                          userPosition: ctrl.currentUserPosition,
-                          selectedLobby: ctrl.selectedLobby,
-                          scale: _scaleFactor,
-                        ),
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge([
+                          ctrl.userPositionNotifier,
+                          ctrl.userHeadingNotifier,
+                          ctrl.currentRouteNotifier,
+                        ]),
+                        builder: (context, _) {
+                          return CustomPaint(
+                            size: Size(mapWidth, mapHeight),
+                            painter: MapPainter(
+                              layout: layout,
+                              route: ctrl.currentRouteNotifier.value,
+                              targetSlot: ctrl.targetSlot,
+                              userPosition: ctrl.userPositionNotifier.value,
+                              headingDeg: ctrl.userHeadingNotifier.value,
+                              selectedLobby: ctrl.selectedLobby,
+                              scale: _scaleFactor,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -534,11 +553,17 @@ class _MapPageState extends State<MapPage> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text(
-                          ctrl.targetSlot != null
-                              ? 'Jarak: ${ctrl.currentRouteDistance.toStringAsFixed(1)} m • ~${(ctrl.currentRouteDistance / 1.2).round()} dtk'
-                              : 'Ketuk slot di denah atau klik Rute Otomatis',
-                          style: const TextStyle(color: Colors.white60, fontSize: 12),
+                        ListenableBuilder(
+                          listenable: ctrl.routeDistanceNotifier,
+                          builder: (context, _) {
+                            final dist = ctrl.routeDistanceNotifier.value;
+                            return Text(
+                              ctrl.targetSlot != null
+                                  ? 'Jarak: ${dist.toStringAsFixed(1)} m • ~${(dist / 1.2).round()} dtk'
+                                  : 'Ketuk slot di denah atau klik Rute Otomatis',
+                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -591,6 +616,113 @@ class _MapPageState extends State<MapPage> {
                 ],
               ),
             ] else ...[
+              // Panel Kontrol Mode Navigasi (Simulasi vs Manual)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161922),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.tune, color: Color(0xFF00E5FF), size: 16),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Mode:',
+                          style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        SegmentedButton<NavigationPositionMode>(
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          segments: const [
+                            ButtonSegment<NavigationPositionMode>(
+                              value: NavigationPositionMode.simulation,
+                              icon: Icon(Icons.smart_toy_outlined, size: 14),
+                              label: Text('Simulasi', style: TextStyle(fontSize: 11)),
+                            ),
+                            ButtonSegment<NavigationPositionMode>(
+                              value: NavigationPositionMode.manual,
+                              icon: Icon(Icons.touch_app_outlined, size: 14),
+                              label: Text('Manual', style: TextStyle(fontSize: 11)),
+                            ),
+                          ],
+                          selected: {ctrl.positionMode},
+                          onSelectionChanged: (Set<NavigationPositionMode> newSelection) {
+                            ctrl.setPositionMode(newSelection.first);
+                          },
+                        ),
+                      ],
+                    ),
+                    if (ctrl.positionMode == NavigationPositionMode.simulation) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          IconButton.filledTonal(
+                            onPressed: () {
+                              if (ctrl.isSimulationPaused) {
+                                ctrl.resumeSimulation();
+                              } else {
+                                ctrl.pauseSimulation();
+                              }
+                            },
+                            icon: Icon(
+                              ctrl.isSimulationPaused ? Icons.play_arrow : Icons.pause,
+                              size: 16,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            tooltip: ctrl.isSimulationPaused ? 'Lanjutkan Simulasi' : 'Jeda Simulasi',
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            ctrl.isSimulationPaused ? 'Dijeda' : 'Berjalan',
+                            style: TextStyle(
+                              color: ctrl.isSimulationPaused ? Colors.amber : const Color(0xFF00E676),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          const Text('Kecepatan:', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                          for (final spd in [0.75, 1.5, 3.0]) ...[
+                            const SizedBox(width: 4),
+                            ChoiceChip(
+                              label: Text('${spd}m/s', style: const TextStyle(fontSize: 10)),
+                              selected: (ctrl.simulationSpeed - spd).abs() < 0.1,
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              onSelected: (selected) {
+                                if (selected) ctrl.setSimulationSpeed(spd);
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 6),
+                      const Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Color(0xFF00E5FF), size: 14),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Ketuk lorong denah untuk memindahkan posisi mobil (snap ke jalan).',
+                              style: TextStyle(color: Colors.white60, fontSize: 11),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
               // Sedang Berjalan: Tombol Simulasi Dynamic Rerouting & Tombol Stop
               Row(
                 children: [

@@ -284,7 +284,7 @@ class MockParkingRepository implements ParkingRepository {
       ),
     ];
 
-    return ParkingLayout(
+    final rawLayout = ParkingLayout(
       width: 50.0,
       height: 25.0,
       lobbies: lobbies,
@@ -292,5 +292,7 @@ class MockParkingRepository implements ParkingRepository {
       edges: edges,
       slots: slots,
     );
+
+    return withSlotAccessNodes(rawLayout);
   }
 }

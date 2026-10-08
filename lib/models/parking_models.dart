@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 /// Status ketersediaan slot parkir.
 enum SlotStatus {
@@ -253,6 +254,201 @@ class ParkingLayout {
         'edges': edges.map((e) => e.toJson()).toList(),
         'slots': slots.map((e) => e.toJson()).toList(),
       };
+
+  /// Memproses layout denah agar tiap slot memiliki node akses (`acc_<slotId>`) di lorong.
+  ParkingLayout withSlotAccessNodes() => smartparkingWithSlotAccessNodes(this);
+
+  static ParkingLayout processWithSlotAccessNodes(ParkingLayout layout) =>
+      smartparkingWithSlotAccessNodes(layout);
+}
+
+/// Menambahkan node akses masuk ("pintu", id: `acc_<slotId>`) untuk tiap slot parkir
+/// pada lorong jalan yang dihadapi slot, dengan x sama dengan slot, lalu membelah
+/// edge lorong di titik tersebut.
+///
+/// Fungsi ini dapat dipanggil untuk denah mock maupun data denah dari backend asli.
+ParkingLayout withSlotAccessNodes(ParkingLayout layout) =>
+    smartparkingWithSlotAccessNodes(layout);
+
+ParkingLayout smartparkingWithSlotAccessNodes(ParkingLayout layout) {
+  // Cek idempotensi: jika semua slot sudah memiliki entryNodeId acc_ dan node-nya ada
+  final nodeMap = {for (var n in layout.nodes) n.id: n};
+  final allAlreadyProcessed = layout.slots.isNotEmpty &&
+      layout.slots.every((s) => s.entryNodeId == 'acc_${s.id}' && nodeMap.containsKey('acc_${s.id}'));
+  if (allAlreadyProcessed) {
+    return layout;
+  }
+
+  final List<Node> createdAccessNodes = [];
+  final List<ParkingSlot> updatedSlots = [];
+
+  // Edge key helper (urutan konsisten untuk edge dua arah)
+  String edgeKey(String from, String to) {
+    return from.compareTo(to) < 0 ? '$from--$to' : '$to--$from';
+  }
+
+  // Peta edge yang akan dibelah: edgeKey -> daftar access node di edge tersebut
+  final Map<String, List<Node>> edgeToAccessNodes = {};
+
+  for (var slot in layout.slots) {
+    // 1. Tentukan koordinat Y lorong yang dihadapi slot
+    double? aisleY;
+    if (nodeMap.containsKey(slot.entryNodeId)) {
+      aisleY = nodeMap[slot.entryNodeId]!.y;
+    }
+
+    // 2. Cari edge horizontal di lorong tersebut yang mencakup rentang x slot
+    Edge? targetEdge;
+    if (aisleY != null) {
+      for (var edge in layout.edges) {
+        final u = nodeMap[edge.from];
+        final v = nodeMap[edge.to];
+        if (u != null && v != null) {
+          // Horizontal edge pada y lorong
+          if ((u.y - aisleY).abs() < 0.01 && (v.y - aisleY).abs() < 0.01) {
+            final minX = math.min(u.x, v.x);
+            final maxX = math.max(u.x, v.x);
+            if (slot.x >= minX - 0.01 && slot.x <= maxX + 0.01) {
+              targetEdge = edge;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback jika tidak ditemukan lewat entryNodeId: cari edge horizontal terdekat
+    if (targetEdge == null) {
+      double minPerpDist = double.infinity;
+      for (var edge in layout.edges) {
+        final u = nodeMap[edge.from];
+        final v = nodeMap[edge.to];
+        if (u != null && v != null && (u.y - v.y).abs() < 0.01) {
+          final minX = math.min(u.x, v.x);
+          final maxX = math.max(u.x, v.x);
+          if (slot.x >= minX - 0.01 && slot.x <= maxX + 0.01) {
+            final dist = (u.y - slot.y).abs();
+            if (dist < minPerpDist) {
+              minPerpDist = dist;
+              targetEdge = edge;
+              aisleY = u.y;
+            }
+          }
+        }
+      }
+    }
+
+    final effectiveY = aisleY ?? (targetEdge != null ? nodeMap[targetEdge.from]!.y : slot.y);
+    final accNode = Node(
+      id: 'acc_${slot.id}',
+      x: slot.x,
+      y: effectiveY,
+    );
+
+    createdAccessNodes.add(accNode);
+    updatedSlots.add(slot.copyWith(entryNodeId: accNode.id));
+
+    if (targetEdge != null) {
+      final key = edgeKey(targetEdge.from, targetEdge.to);
+      edgeToAccessNodes.putIfAbsent(key, () => []).add(accNode);
+    }
+  }
+
+  // 3. Bangun edge baru dengan membelah edge yang memiliki access node
+  final List<Edge> newEdges = [];
+
+  for (var edge in layout.edges) {
+    final key = edgeKey(edge.from, edge.to);
+    final accessNodesOnEdge = edgeToAccessNodes[key];
+
+    if (accessNodesOnEdge == null || accessNodesOnEdge.isEmpty) {
+      newEdges.add(edge);
+      continue;
+    }
+
+    final u = nodeMap[edge.from]!;
+    final v = nodeMap[edge.to]!;
+
+    // Hitung posisi relatif parameter t (0.0 di u, 1.0 di v)
+    final dx = v.x - u.x;
+    final dy = v.y - u.y;
+    final lenSq = dx * dx + dy * dy;
+
+    double getT(Node node) {
+      if (lenSq == 0) return 0.0;
+      return ((node.x - u.x) * dx + (node.y - u.y) * dy) / lenSq;
+    }
+
+    // Kelompokkan node berdasarkan posisi t yang sama
+    final Map<int, List<Node>> tGroups = {};
+    for (var accNode in accessNodesOnEdge) {
+      final t = getT(accNode);
+      final keyT = (t * 10000).round();
+      tGroups.putIfAbsent(keyT, () => []).add(accNode);
+    }
+
+    final sortedTKeys = tGroups.keys.toList()..sort();
+
+    // Bentuk urutan kelompok titik dari u (t=0) ke v (t=1)
+    final List<List<Node>> sequenceOfGroups = [];
+    sequenceOfGroups.add([u]);
+    for (var k in sortedTKeys) {
+      sequenceOfGroups.add(tGroups[k]!);
+    }
+    sequenceOfGroups.add([v]);
+
+    // Hubungkan setiap kelompok ke kelompok berikutnya
+    for (int i = 0; i < sequenceOfGroups.length - 1; i++) {
+      final groupA = sequenceOfGroups[i];
+      final groupB = sequenceOfGroups[i + 1];
+
+      for (var nodeA in groupA) {
+        for (var nodeB in groupB) {
+          final dist = math.sqrt(
+            math.pow(nodeA.x - nodeB.x, 2) + math.pow(nodeA.y - nodeB.y, 2),
+          );
+          newEdges.add(Edge(
+            from: nodeA.id,
+            to: nodeB.id,
+            weight: dist,
+            bidirectional: edge.bidirectional,
+          ));
+        }
+      }
+    }
+
+    // Jika di satu titik t terdapat beberapa access node (misal B1 dan C1 di x=9)
+    for (var k in sortedTKeys) {
+      final nodesAtT = tGroups[k]!;
+      if (nodesAtT.length > 1) {
+        for (int i = 0; i < nodesAtT.length; i++) {
+          for (int j = i + 1; j < nodesAtT.length; j++) {
+            newEdges.add(Edge(
+              from: nodesAtT[i].id,
+              to: nodesAtT[j].id,
+              weight: 0.0,
+              bidirectional: true,
+            ));
+          }
+        }
+      }
+    }
+  }
+
+  // Gabungkan nodes unik (node awal + access node yang dibuat)
+  final Map<String, Node> mergedNodes = {for (var n in layout.nodes) n.id: n};
+  for (var accNode in createdAccessNodes) {
+    mergedNodes[accNode.id] = accNode;
+  }
+
+  return ParkingLayout(
+    width: layout.width,
+    height: layout.height,
+    lobbies: layout.lobbies,
+    nodes: mergedNodes.values.toList(),
+    edges: newEdges,
+    slots: updatedSlots,
+  );
 }
 
 /// Pesan event update slot realtime (dari WebSocket/SSE).

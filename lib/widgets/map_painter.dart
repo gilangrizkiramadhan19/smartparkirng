@@ -8,6 +8,7 @@ class MapPainter extends CustomPainter {
   final List<Node> route;
   final ParkingSlot? targetSlot;
   final Node? userPosition;
+  final double? headingDeg;
   final Lobby? selectedLobby;
   final double scale; // Faktor pengali meter ke pixel
 
@@ -16,6 +17,7 @@ class MapPainter extends CustomPainter {
     required this.route,
     this.targetSlot,
     this.userPosition,
+    this.headingDeg,
     this.selectedLobby,
     this.scale = 16.0, // 1 meter = 16 logical pixels
   });
@@ -329,6 +331,28 @@ class MapPainter extends CustomPainter {
       ..color = const Color(0xFF2979FF)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(pos, 5.0, corePaint);
+
+    // Indikator arah hadap (heading) jika tersedia
+    if (headingDeg != null) {
+      final rad = headingDeg! * math.pi / 180.0;
+      final headingPaint = Paint()
+        ..color = const Color(0xFF00E5FF)
+        ..style = PaintingStyle.fill;
+
+      canvas.save();
+      canvas.translate(pos.dx, pos.dy);
+      canvas.rotate(rad);
+
+      final pointerPath = Path()
+        ..moveTo(11.0, 0)
+        ..lineTo(5.0, -3.5)
+        ..lineTo(6.5, 0)
+        ..lineTo(5.0, 3.5)
+        ..close();
+
+      canvas.drawPath(pointerPath, headingPaint);
+      canvas.restore();
+    }
   }
 
   @override
@@ -337,6 +361,7 @@ class MapPainter extends CustomPainter {
         oldDelegate.route != route ||
         oldDelegate.targetSlot != targetSlot ||
         oldDelegate.userPosition != userPosition ||
+        oldDelegate.headingDeg != headingDeg ||
         oldDelegate.selectedLobby != selectedLobby;
   }
 }
