@@ -93,21 +93,23 @@ Aplikasi mengasumsikan backend menyediakan data berikut. Semua koordinat dalam *
 
 > Nama endpoint dan field di atas masih asumsi. Sesuaikan dengan kontrak API yang disepakati bersama tim backend.
 
-## Rencana Integrasi AR
+## AR Navigation (Full Flutter / Tanpa Unity)
 
-AR dipakai sebagai media visualisasi, bukan fitur terpisah. Logika rute tetap di Flutter.
+Aplikasi menyediakan fitur navigasi **Augmented Reality (AR) native murni di Flutter/Dart** tanpa ketergantungan pada Unity maupun `flutter_unity_widget`.
 
-1. Flutter menghitung rute (A*) dan mengirim daftar titik sebagai JSON ke Unity (`NavigationController.routeJsonForUnity()`).
-2. Unity menaruh model panah (chevron) di tiap titik dan mengarahkannya ke titik berikutnya.
-3. Immersal (visual positioning) memberi posisi HP di ruangan nyata, sehingga panah menempel di lantai.
-4. Saat rerouting, Flutter mengirim rute baru dan Unity mengganti panahnya.
+Fitur AR ini merender:
+1. **Chevron/Panah 3D di Lantai:** Ditransformasikan dari koordinat lokal meter denah ke piksel layar melalui model kamera lubang jarum perspektif 3D (`ARProjector`). Panah membesar saat dekat dan mengecil saat jauh dengan efek denyut neon berjalan.
+2. **Indikator Arah Tepi Layar:** Jika pengguna menghadap ke arah yang salah atau waypoint rute berada di luar layar, panah navigasi tepi layar memandu arah belok (*Belok Kiri*, *Belok Kanan*, atau *Putar Balik*).
+3. **Pin Melayang Slot Tujuan:** Saat mendekati slot tujuan (< 18 m), pin 3D berdenyut di atas slot parkir target.
+4. **Kalibrasi Posisi Awal via QR:** Scan QR di tiang/lobby berisi Node ID atau JSON `{"node":"c_l1","heading":90}` untuk menyetel posisi awal dan offset kompas. Sedia juga fallback slider manual.
+5. **Dead Reckoning & Pedometer:** Estimasi langkah kaki dari accelerometer (`sensors_plus`) + heading kompas (`flutter_compass`) dengan low-pass filter, di-snap otomatis ke graf jalan denah.
+6. **Mode Simulasi AR:** Tersedia tombol mode simulasi agar rute AR dapat didemokan tanpa harus berjalan fisik.
+7. **HUD & Mini-Map:** Menampilkan instruksi *turn-by-turn*, sisa jarak, ETA, dan denah 2D kecil di pojok layar.
 
-Catatan teknis yang perlu diselesaikan:
-
-- Koordinat denah (meter) harus diselaraskan dengan koordinat peta Immersal (offset, rotasi, skala).
-- Uji hasil scan Immersal di area parkir yang sebenarnya, karena pemandangan parkir cenderung berulang dan redup.
-- Cek kompatibilitas versi `flutter_unity_widget` dengan versi Flutter dan Unity yang dipakai.
-- Cek lisensi dan batasan versi gratis Immersal.
+### Keterbatasan
+- Ini adalah **pseudo-AR berbasis sensor** (kompas + accelerometer), bukan SLAM (*Simultaneous Localization and Mapping*) atau visual odometry.
+- Akurasi estimasi posisi menurun seiring jarak berjalan akibat akumulasi kesalahan (*drift*), dan sensor kompas magnetik dapat mengalami interferensi logam/struktur beton bertulang di dalam basement parkir.
+- Oleh karena itu, kode QR kalibrasi dirancang untuk ditempel di beberapa titik strategis (seperti pintu lobby, persimpangan lorong, dan tiang penanda).
 
 ## Rencana Pengembangan
 

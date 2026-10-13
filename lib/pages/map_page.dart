@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/parking_models.dart';
 import '../services/navigation_controller.dart';
 import '../widgets/map_painter.dart';
+import 'ar_page.dart';
 
 class MapPage extends StatefulWidget {
   final NavigationController controller;
@@ -468,17 +469,31 @@ class _MapPageState extends State<MapPage> {
                 ),
               ),
 
-              // 4. Floating Action Button: AR Unity Payload Preview
+              // 4. Floating Action Button: Buka Navigasi AR
               Positioned(
                 top: ctrl.statusBanner != null ? 70 : 16,
                 right: 16,
-                child: FloatingActionButton.small(
-                  heroTag: 'ar_btn',
-                  backgroundColor: const Color(0xFF1E222D),
-                  foregroundColor: const Color(0xFF00E5FF),
-                  tooltip: 'Lihat Payload AR Unity',
-                  onPressed: _showArJsonPayloadDialog,
-                  child: const Icon(Icons.view_in_ar),
+                child: GestureDetector(
+                  onLongPress: _showArJsonPayloadDialog,
+                  child: FloatingActionButton.extended(
+                    heroTag: 'ar_btn',
+                    backgroundColor: const Color(0xFF1E222D),
+                    foregroundColor: const Color(0xFF00FF88),
+                    tooltip: 'Buka Mode Navigasi AR Fullscreen (Tahan untuk Payload JSON)',
+                    icon: const Icon(Icons.view_in_ar),
+                    label: const Text(
+                      'Mode AR',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ArPage(controller: widget.controller),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
 
@@ -596,6 +611,7 @@ class _MapPageState extends State<MapPage> {
               Row(
                 children: [
                   Expanded(
+                    flex: 3,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF00E5FF),
@@ -609,7 +625,37 @@ class _MapPageState extends State<MapPage> {
                       icon: const Icon(Icons.route, size: 20),
                       label: const Text(
                         'Rute Terdekat (A*)',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00FF88),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        if (!ctrl.isNavigating) {
+                          ctrl.startNavigation();
+                        }
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ArPage(controller: widget.controller),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.view_in_ar, size: 20),
+                      label: const Text(
+                        'Mode AR',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ),
                   ),
@@ -723,10 +769,11 @@ class _MapPageState extends State<MapPage> {
                 ),
               ),
 
-              // Sedang Berjalan: Tombol Simulasi Dynamic Rerouting & Tombol Stop
+              // Sedang Berjalan: Tombol Berhenti, Mode AR, dan Simulasi Rerouting
               Row(
                 children: [
                   Expanded(
+                    flex: 2,
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFFFF5252),
@@ -741,8 +788,33 @@ class _MapPageState extends State<MapPage> {
                       label: const Text('Berhenti', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00FF88),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ArPage(controller: widget.controller),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.view_in_ar, size: 18),
+                      label: const Text('Mode AR', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFFAB00),
@@ -755,8 +827,8 @@ class _MapPageState extends State<MapPage> {
                       onPressed: ctrl.simulateTargetOccupied,
                       icon: const Icon(Icons.bolt, size: 18),
                       label: const Text(
-                        'Simulasi: Slot Terisi',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        'Sim: Terisi',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
                       ),
                     ),
                   ),
