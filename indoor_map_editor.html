@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indoor AR Map Editor</title>
+<meta name="description" content="Admin tool untuk menggambar denah gedung sebagai graf node dan jalur, lalu mengekspornya sebagai JSON untuk aplikasi navigasi Flutter.">
+
+<!-- QR Code library dari cdnjs -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<style>
+/* =============================================
+   DESIGN TOKENS & GLOBAL RESET
+   ============================================= */
+:root {
+  --bg-base:       #0d0f14;
+  --bg-surface:    #13161f;
+  --bg-panel:      #181c28;
+  --bg-hover:      #1e2335;
+  --bg-active:     #232840;
+  --border:        #2a2f45;
+  --border-bright: #3a4060;
+
+  --cyan:          #00e5ff;
+  --cyan-dim:      #00b8cc;
+  --cyan-glow:     rgba(0,229,255,0.18);
+  --purple:        #bb86fc;
+  --purple-dim:    #9b65d8;
+  --purple-glow:   rgba(187,134,252,0.18);
+
+  --text-primary:  #e8ecf5;
+  --text-secondary:#8892b0;
+  --text-dim:      #4a5270;
+
+  --green:         #00e676;
+  --yellow:        #ffd740;
+  --red:           #ff5252;
+  --orange:        #ff9800;
+
+  --font: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  --sidebar-w: 220px;
+  --inspector-w: 280px;
+  --statusbar-h: 28px;
+  --banner-h: 36px;
+  --topbar-h: 48px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+
+/* =============================================
+   LAYOUT SHELL
+   ============================================= */
+#app {
+  display: grid;
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-columns: var(--sidebar-w) 1fr var(--inspector-w);
+  grid-template-areas:
+    "topbar topbar topbar"
+    "sidebar canvas inspector";
+  width: 100%; height: 100%;
+}
+
+/* =============================================
+   TOP BAR
+   ============================================= */
+#topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+
+#topbar .logo {
+  font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+#topbar .sep { flex: 1; }
+
+.top-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg-hover); color: var(--text-primary);
+  cursor: pointer; font-size: 11px; font-family: var(--font);
+  transition: all .15s; white-space: nowrap;
+}
+.top-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* =============================================
+   SIDEBAR
+   ============================================= */
+#sidebar {
+  grid-area: sidebar;
+  display: flex; flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden;
+}
+
+.sidebar-section { padding: 10px 10px 6px; border-bottom: 1px solid var(--border); }
+.sidebar-section-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+}
+
+.tool-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 8px; margin-bottom: 3px;
+  background: var(--bg-hover); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--text-secondary);
+  cursor: pointer; font-family: var(--font); font-size: 12px;
+  transition: all .15s; text-align: left;
+}
+.tool-btn:hover { background: var(--bg-active); color: var(--text-primary); }
+.tool-btn.active {
+  background: var(--cyan-glow); border-color: var(--cyan);
+  color: var(--cyan); font-weight: 600;
+}
+.tool-btn .t-icon { font-size: 15px; width: 18px; text-align: center; }
+.tool-btn .t-key {
+  margin-left: auto; font-size: 10px; color: var(--text-dim);
+  background: var(--bg-base); padding: 1px 4px; border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.floor-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.floor-tab {
+  padding: 3px 9px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg-hover);
+  color: var(--text-secondary); cursor: pointer; font-size: 11px; transition: all .15s;
+}
+.floor-tab.active { border-color: var(--purple); color: var(--purple); background: var(--purple-glow); }
+.floor-tab:hover:not(.active) { border-color: var(--border-bright); color: var(--text-primary); }
+
+.small-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--bg-hover); color: var(--text-secondary);
+  cursor: pointer; font-size: 11px; font-family: var(--font); transition: all .15s;
+}
+.small-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.small-btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+.field-row { display: flex; flex-direction: column; gap: 2px; }
+.field-row label { font-size: 10px; color: var(--text-dim); }
+.field-row input[type=text],
+.field-row input[type=number] {
+  width: 100%; padding: 4px 6px;
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-primary);
+  font-family: var(--font); font-size: 12px;
+}
+.field-row input:focus { border-color: var(--cyan); outline: none; }
+
+.legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: var(--text-secondary); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+.stat-item { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
+.stat-label { color: var(--text-dim); }
+.stat-value { color: var(--cyan); font-family: var(--mono); }
+
+.blueprint-area { display: flex; flex-direction: column; gap: 6px; }
+.blueprint-preview {
+  width: 100%; height: 55px;
+  background: var(--bg-base); border: 1px dashed var(--border);
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); font-size: 11px; overflow: hidden;
+}
+.blueprint-preview img { width: 100%; height: 100%; object-fit: cover; }
+
+input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 4px;
+  border-radius: 2px; background: var(--border); outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--cyan); cursor: pointer;
+}
+
+.check-row { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.check-row input[type=checkbox] { accent-color: var(--cyan); width: 13px; height: 13px; }
+.check-row span { font-size: 11px; color: var(--text-secondary); }
+
+/* =============================================
+   CANVAS AREA
+   ============================================= */
+#canvas-wrap {
+  grid-area: canvas;
+  position: relative; overflow: hidden;
+  background: var(--bg-base);
+  display: flex; flex-direction: column;
+}
+
+#mode-banner {
+  height: var(--banner-h);
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid var(--border); letter-spacing: 0.3px; flex-shrink: 0;
+}
+
+#map-canvas { flex: 1; display: block; cursor: crosshair; }
+
+#statusbar {
+  height: var(--statusbar-h); display: flex; align-items: center; gap: 14px;
+  padding: 0 12px; background: var(--bg-panel); border-top: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11px; color: var(--text-secondary); flex-shrink: 0;
+}
+.status-seg { display: flex; align-items: center; gap: 3px; }
+.status-seg .key { color: var(--text-dim); }
+.status-seg .val { color: var(--cyan); }
+.status-sep { color: var(--border-bright); }
+
+/* =============================================
+   INSPECTOR PANEL
+   ============================================= */
+#inspector {
+  grid-area: inspector;
+  display: flex; flex-direction: column;
+  background: var(--bg-panel); border-left: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.inspector-header {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--text-dim);
+}
+
+.inspector-body { padding: 12px; flex: 1; }
+
+.inspector-none {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 8px; height: 120px;
+  color: var(--text-dim); font-size: 12px; text-align: center;
+}
+
+.insp-field { margin-bottom: 9px; }
+.insp-field label { display: block; font-size: 10px; color: var(--text-dim); margin-bottom: 3px; }
+.insp-field input,
+.insp-field select {
+  width: 100%; padding: 5px 7px;
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-primary);
+  font-family: var(--font); font-size: 12px;
+}
+.insp-field input:focus, .insp-field select:focus { border-color: var(--cyan); outline: none; }
+.insp-field select option { background: var(--bg-panel); }
+
+.insp-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.insp-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600;
+  margin-bottom: 8px; border: 1px solid;
+}
+
+.insp-divider { height: 1px; background: var(--border); margin: 10px 0; }
+
+.insp-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.insp-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg-hover); color: var(--text-primary);
+  cursor: pointer; font-size: 12px; font-family: var(--font); transition: all .15s;
+}
+.insp-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.insp-btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(255,82,82,0.08); }
+.insp-btn.primary { background: var(--cyan-glow); border-color: var(--cyan); color: var(--cyan); font-weight: 600; }
+.insp-btn.primary:hover { background: rgba(0,229,255,0.28); }
+.insp-btn.purple { background: var(--purple-glow); border-color: var(--purple); color: var(--purple); }
+.insp-btn.purple:hover { background: rgba(187,134,252,0.28); }
+
+.export-section { padding: 12px; border-top: 1px solid var(--border); }
+.export-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
+}
+
+.route-result {
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 5px; padding: 8px; margin-top: 8px; font-size: 11px;
+}
+.route-result.success { border-color: var(--cyan); }
+.route-result.fail { border-color: var(--red); color: var(--red); }
+.route-stat { display: flex; justify-content: space-between; margin-bottom: 3px; }
+.route-stat .key { color: var(--text-dim); }
+.route-stat .val { color: var(--cyan); font-family: var(--mono); font-weight: 600; }
+
+.warnings-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.warning-item {
+  display: flex; align-items: flex-start; gap: 6px;
+  background: rgba(255,152,0,0.08); border: 1px solid rgba(255,152,0,0.3);
+  border-radius: 4px; padding: 5px 7px; font-size: 11px; color: var(--orange);
+}
+
+/* =============================================
+   MODAL / OVERLAY
+   ============================================= */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+
+.modal-box {
+  background: var(--bg-panel); border: 1px solid var(--border-bright);
+  border-radius: 12px; padding: 24px; min-width: 300px; max-width: 480px;
+  width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  transform: translateY(12px); transition: transform .2s;
+}
+.modal-overlay.open .modal-box { transform: translateY(0); }
+.modal-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; color: var(--text-primary); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.modal-btn {
+  padding: 7px 16px; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg-hover); color: var(--text-primary);
+  cursor: pointer; font-family: var(--font); font-size: 12px; transition: all .15s;
+}
+.modal-btn.primary { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-glow); }
+.modal-btn.danger { border-color: var(--red); color: var(--red); }
+.modal-btn:hover { opacity: 0.85; }
+
+#qr-modal-canvas { display: flex; justify-content: center; margin: 12px 0; }
+
+#toast-container {
+  position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column-reverse; align-items: center;
+  gap: 6px; z-index: 2000; pointer-events: none;
+}
+.toast {
+  padding: 8px 18px; border-radius: 20px;
+  background: var(--bg-panel); border: 1px solid var(--border-bright);
+  color: var(--text-primary); font-size: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  animation: toastIn .2s ease, toastOut .3s ease 2.5s forwards;
+}
+.toast.success { border-color: var(--green); color: var(--green); }
+.toast.error   { border-color: var(--red);   color: var(--red); }
+.toast.info    { border-color: var(--cyan);   color: var(--cyan); }
+
+@keyframes toastIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+
+#conn-hint {
+  position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%);
+  background: var(--cyan-glow); border: 1px solid var(--cyan);
+  border-radius: 6px; padding: 4px 12px; font-size: 11px; color: var(--cyan);
+  pointer-events: none; display: none;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div class="logo">&#x2B21; Indoor AR Map Editor</div>
+    <div class="sep"></div>
+    <button class="top-btn" id="btn-undo">&#x21A9; Undo</button>
+    <button class="top-btn" id="btn-redo">&#x21AA; Redo</button>
+    <button class="top-btn" id="btn-template-empty">&#x1F4C4; Template Kosong</button>
+    <button class="top-btn" id="btn-template-sample">&#x1F3E2; Contoh Denah</button>
+    <button class="top-btn" id="btn-fit">&#x229F; Fit View</button>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Mode Alat</div>
+      <button class="tool-btn active" data-tool="add-node">
+        <span class="t-icon">&#x2295;</span> Tambah Node <span class="t-key">1</span>
+      </button>
+      <button class="tool-btn" data-tool="connect">
+        <span class="t-icon">&#x27F6;</span> Hubung Jalur <span class="t-key">2</span>
+      </button>
+      <button class="tool-btn" data-tool="select">
+        <span class="t-icon">&#x2196;</span> Pilih &amp; Geser <span class="t-key">3</span>
+      </button>
+      <button class="tool-btn" data-tool="route">
+        <span class="t-icon">&#x1F5FA;</span> Uji Rute <span class="t-key">4</span>
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Pengaturan</div>
+      <div class="field-row">
+        <label>Snap Grid (meter)</label>
+        <input type="number" id="snap-size" value="0.5" min="0.1" step="0.1" max="5">
+      </div>
+      <div class="field-row" style="margin-top:6px">
+        <label>Kecepatan Jalan (m/s)</label>
+        <input type="number" id="walk-speed" value="1.4" min="0.1" step="0.1" max="10">
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Lantai</div>
+      <div class="floor-tabs" id="floor-tabs"></div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="small-btn" id="btn-add-floor">+ Tambah</button>
+        <button class="small-btn danger" id="btn-del-floor">&#x2715; Hapus</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Pengaturan Lantai</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div class="field-row">
+          <label>Nama Lantai</label>
+          <input type="text" id="floor-name" value="Lantai 1">
+        </div>
+        <div class="insp-row-2">
+          <div class="field-row"><label>Lebar (m)</label><input type="number" id="floor-width" value="40" min="5" step="1"></div>
+          <div class="field-row"><label>Panjang (m)</label><input type="number" id="floor-length" value="25" min="5" step="1"></div>
+        </div>
+        <div class="field-row"><label>North Offset (derajat)</label><input type="number" id="floor-north" value="0" min="-180" step="1" max="180"></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Blueprint</div>
+      <div class="blueprint-area">
+        <div class="blueprint-preview" id="bp-preview"><span>Belum ada gambar</span></div>
+        <button class="small-btn" id="btn-load-bp">&#x1F4C1; Pasang Gambar Denah</button>
+        <input type="file" id="bp-file-input" accept="image/*" style="display:none">
+        <div class="field-row">
+          <label>Transparansi: <span id="bp-alpha-val">50</span>%</label>
+          <input type="range" id="bp-alpha" min="0" max="100" value="50">
+        </div>
+        <label class="check-row">
+          <input type="checkbox" id="bp-include-b64">
+          <span>Sertakan blueprint (base64) di JSON</span>
+        </label>
+        <button class="small-btn danger" id="btn-remove-bp" style="display:none">&#x2715; Hapus Gambar</button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Legenda</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div>Entrance</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#00e5ff"></div>Junction</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#bb86fc"></div>Room</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ffd740"></div>Slot (Parkir)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff9800"></div>Tangga / Lift</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Info Total</div>
+      <div class="stat-item"><span class="stat-label">Node</span><span class="stat-value" id="stat-nodes">0</span></div>
+      <div class="stat-item"><span class="stat-label">Jalur (Edge)</span><span class="stat-value" id="stat-edges">0</span></div>
+      <div class="stat-item"><span class="stat-label">Lantai</span><span class="stat-value" id="stat-floors">1</span></div>
+    </div>
+  </aside>
+
+  <!-- CANVAS AREA -->
+  <main id="canvas-wrap">
+    <div id="mode-banner">&#x2295; Mode: Tambah Node — Klik canvas untuk meletakkan node baru</div>
+    <canvas id="map-canvas"></canvas>
+    <div id="statusbar">
+      <div class="status-seg"><span class="key">X:</span><span class="val" id="s-x">0.00</span><span class="key">m</span></div>
+      <div class="status-seg"><span class="key">Y:</span><span class="val" id="s-y">0.00</span><span class="key">m</span></div>
+      <div class="status-sep">|</div>
+      <div class="status-seg"><span class="key">Zoom:</span><span class="val" id="s-zoom">100</span><span class="key">%</span></div>
+      <div class="status-sep">|</div>
+      <div class="status-seg"><span class="val">Scroll: zoom &middot; Kanan/Spasi+drag: geser &middot; Del: hapus terpilih</span></div>
+    </div>
+    <div id="conn-hint">Klik node B untuk membuat jalur</div>
+  </main>
+
+  <!-- INSPECTOR -->
+  <aside id="inspector">
+    <div class="inspector-header">Inspector</div>
+
+    <div class="inspector-body" id="insp-none">
+      <div class="inspector-none">
+        <div style="font-size:28px">&#x2196;</div>
+        <div>Pilih node atau jalur<br>untuk melihat propertinya</div>
+      </div>
+    </div>
+
+    <div class="inspector-body" id="insp-node" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:700">NODE</span>
+        <span class="insp-badge" id="node-type-badge">&#8211;</span>
+      </div>
+      <div class="insp-field">
+        <label>ID (read-only)</label>
+        <input type="text" id="node-id-input" readonly style="color:var(--text-dim)">
+      </div>
+      <div class="insp-field">
+        <label>Nama</label>
+        <input type="text" id="node-name-input" placeholder="Nama node...">
+      </div>
+      <div class="insp-field">
+        <label>Tipe</label>
+        <select id="node-type-input">
+          <option value="entrance">Entrance (Pintu Masuk)</option>
+          <option value="junction">Junction (Persimpangan)</option>
+          <option value="room">Room (Ruangan)</option>
+          <option value="slot">Slot (Parkir)</option>
+          <option value="stairs">Stairs (Tangga)</option>
+          <option value="elevator">Elevator (Lift)</option>
+        </select>
+      </div>
+      <div class="insp-row-2">
+        <div class="insp-field"><label>X (m)</label><input type="number" id="node-x-input" step="0.01"></div>
+        <div class="insp-field"><label>Y (m)</label><input type="number" id="node-y-input" step="0.01"></div>
+      </div>
+      <div class="insp-field" id="connects-to-field" style="display:none">
+        <label>connectsTo (ID node lantai lain)</label>
+        <input type="text" id="node-connects-input" placeholder="misal: n5">
+      </div>
+      <div class="insp-divider"></div>
+      <div class="insp-actions">
+        <button class="insp-btn purple" id="btn-qr">&#x1F532; Cetak QR Node Ini</button>
+        <button class="insp-btn danger" id="btn-delete-node">&#x1F5D1; Hapus Node &amp; Jalurnya</button>
+      </div>
+    </div>
+
+    <div class="inspector-body" id="insp-edge" style="display:none">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">JALUR (EDGE)</div>
+      <div class="insp-field"><label>ID</label><input type="text" id="edge-id-input" readonly style="color:var(--text-dim)"></div>
+      <div class="insp-field"><label>Dari Node</label><input type="text" id="edge-from-input" readonly style="color:var(--text-dim)"></div>
+      <div class="insp-field"><label>Ke Node</label><input type="text" id="edge-to-input" readonly style="color:var(--text-dim)"></div>
+      <div class="insp-field"><label>Jarak (meter)</label><input type="text" id="edge-dist-input" readonly style="color:var(--cyan);font-family:var(--mono)"></div>
+      <div class="insp-divider"></div>
+      <div class="insp-actions">
+        <button class="insp-btn danger" id="btn-delete-edge">&#x1F5D1; Hapus Jalur Ini</button>
+      </div>
+    </div>
+
+    <div class="inspector-body" id="insp-route" style="display:none">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">&#x1F5FA; UJI RUTE (A*)</div>
+      <div class="insp-field"><label>Node Awal</label><select id="route-from"><option value="">-- pilih --</option></select></div>
+      <div class="insp-field"><label>Node Tujuan</label><select id="route-to"><option value="">-- pilih --</option></select></div>
+      <div class="insp-actions">
+        <button class="insp-btn primary" id="btn-run-route">&#x25B6; Jalankan Rute</button>
+        <button class="insp-btn" id="btn-clear-route">&#x2715; Hapus Rute</button>
+      </div>
+      <div id="route-result-box"></div>
+    </div>
+
+    <div class="export-section">
+      <div class="export-title">Ekspor / Impor</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="insp-btn primary" id="btn-export">&#x2B07; Ekspor JSON</button>
+        <button class="insp-btn" id="btn-import">&#x2B06; Impor File JSON</button>
+        <input type="file" id="import-file-input" accept=".json" style="display:none">
+        <div id="validation-warnings"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal-box">
+    <div class="modal-title">&#x1F532; QR Code Node</div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
+      Tempel QR ini di lokasi fisik. Data yang dikodekan:
+    </div>
+    <pre id="qr-json-preview" style="background:var(--bg-base);padding:8px;border-radius:4px;font-size:10px;font-family:var(--mono);color:var(--cyan);white-space:pre-wrap;margin-bottom:8px"></pre>
+    <div id="qr-modal-canvas"></div>
+    <div class="modal-actions">
+      <button class="modal-btn" id="btn-qr-download">&#x2B07; Unduh PNG</button>
+      <button class="modal-btn" id="btn-qr-close">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="add-floor-modal">
+  <div class="modal-box">
+    <div class="modal-title">+ Tambah Lantai Baru</div>
+    <div class="insp-field"><label>Nama Lantai</label><input type="text" id="new-floor-name" value="Lantai Baru"></div>
+    <div class="insp-row-2">
+      <div class="insp-field"><label>Lebar (m)</label><input type="number" id="new-floor-width" value="40" min="5"></div>
+      <div class="insp-field"><label>Panjang (m)</label><input type="number" id="new-floor-length" value="25" min="5"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" id="btn-add-floor-cancel">Batal</button>
+      <button class="modal-btn primary" id="btn-add-floor-ok">Tambah</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="del-floor-modal">
+  <div class="modal-box">
+    <div class="modal-title">&#x26A0; Hapus Lantai?</div>
+    <p style="font-size:12px;color:var(--text-secondary)">Semua node dan jalur di lantai ini akan ikut terhapus. Tindakan ini bisa di-undo.</p>
+    <div class="modal-actions">
+      <button class="modal-btn" id="btn-del-floor-cancel">Batal</button>
+      <button class="modal-btn danger" id="btn-del-floor-ok">Ya, Hapus</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="export-modal">
+  <div class="modal-box" style="max-width:540px">
+    <div class="modal-title">&#x2B07; Ekspor JSON</div>
+    <div id="export-warnings-box" style="margin-bottom:10px"></div>
+    <textarea id="export-textarea" readonly
+      style="width:100%;height:200px;background:var(--bg-base);border:1px solid var(--border);
+             border-radius:5px;color:var(--cyan);font-family:var(--mono);font-size:10px;
+             padding:8px;resize:none;outline:none"></textarea>
+    <div class="modal-actions">
+      <button class="modal-btn" id="btn-export-copy">&#x1F4CB; Salin</button>
+      <button class="modal-btn primary" id="btn-export-download">&#x2B07; Unduh map.json</button>
+      <button class="modal-btn" id="btn-export-close">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+'use strict';
+
+/* =============================================
+   KONSTANTA TIPE NODE
+   ============================================= */
+const NODE_TYPES = {
+  entrance: { label: 'Entrance',  color: '#00e676', stroke: '#00a849', radius: 10 },
+  junction: { label: 'Junction',  color: '#00e5ff', stroke: '#009ab5', radius: 8  },
+  room:     { label: 'Room',      color: '#bb86fc', stroke: '#7c4dbb', radius: 9  },
+  slot:     { label: 'Slot',      color: '#ffd740', stroke: '#b59700', radius: 8  },
+  stairs:   { label: 'Tangga',    color: '#ff9800', stroke: '#c56200', radius: 9  },
+  elevator: { label: 'Lift',      color: '#ff9800', stroke: '#c56200', radius: 9  },
+};
+
+const AUTOSAVE_KEY = 'indoor_ar_map_editor_v1';
+const VERSION = 1;
+
+/* =============================================
+   STATE GLOBAL
+   ============================================= */
+const state = {
+  // Data model
+  floors: [],
+  currentFloorIdx: 0,
+  nodeCounter: 0,
+  edgeCounter: 0,
+  floorCounter: 0,
+
+  // Viewport
+  offsetX: 60,
+  offsetY: 60,
+  zoom: 1.0,
+  BASE_PX: 16,   // pixel per meter saat zoom=1
+
+  // Tool aktif
+  tool: 'add-node',
+
+  // Select tool
+  selectedNodeId: null,
+  selectedEdgeId: null,
+  draggingNodeId: null,
+
+  // Connect tool
+  connectFromId: null,
+
+  // Route highlight
+  routePath: [],
+
+  // Pan
+  isPanning: false,
+  panStartX: 0,
+  panStartY: 0,
+  spaceDown: false,
+
+  // Blueprint per floor ID
+  blueprints: {},
+
+  // Undo/Redo stacks
+  undoStack: [],
+  redoStack: [],
+
+  // Mouse position di canvas (untuk rubber-band connect)
+  _mouse: null,
+};
+
+/* =============================================
+   MODEL DATA — FLOOR
+   ============================================= */
+function createFloor(name, width, length) {
+  state.floorCounter++;
+  return { id: 'L' + state.floorCounter, name, width, length, northOffset: 0, nodes: [], edges: [] };
+}
+
+function currentFloor() { return state.floors[state.currentFloorIdx] || null; }
+
+function switchFloor(idx) {
+  state.selectedNodeId = null; state.selectedEdgeId = null;
+  state.connectFromId = null; state.routePath = [];
+  state.currentFloorIdx = idx;
+  updateFloorTabs(); updateFloorSettings(); updateInspector();
+  updateStats(); renderCanvas(); updateRouteSelects();
+}
+
+/* =============================================
+   MODEL DATA — NODE & EDGE
+   ============================================= */
+function genNodeId() { state.nodeCounter++; return 'n' + state.nodeCounter; }
+function genEdgeId() { state.edgeCounter++; return 'e' + state.edgeCounter; }
+
+function euclidDist(a, b) {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+function addNode(x, y, type, name) {
+  const floor = currentFloor(); if (!floor) return null;
+  const id = genNodeId();
+  const node = { id, name: name || id, type: type || 'junction', x: +x.toFixed(3), y: +y.toFixed(3) };
+  floor.nodes.push(node);
+  return node;
+}
+
+function removeNode(nodeId) {
+  const floor = currentFloor(); if (!floor) return;
+  floor.nodes = floor.nodes.filter(n => n.id !== nodeId);
+  floor.edges = floor.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
+  if (state.selectedNodeId === nodeId) state.selectedNodeId = null;
+}
+
+function addEdge(fromId, toId) {
+  const floor = currentFloor(); if (!floor) return null;
+  if (fromId === toId) return null;
+  const dup = floor.edges.some(e =>
+    (e.from === fromId && e.to === toId) || (e.from === toId && e.to === fromId));
+  if (dup) return null;
+  const nA = floor.nodes.find(n => n.id === fromId);
+  const nB = floor.nodes.find(n => n.id === toId);
+  if (!nA || !nB) return null;
+  const id = genEdgeId();
+  const edge = { id, from: fromId, to: toId, distance: +euclidDist(nA, nB).toFixed(3) };
+  floor.edges.push(edge);
+  return edge;
+}
+
+function removeEdge(edgeId) {
+  const floor = currentFloor(); if (!floor) return;
+  floor.edges = floor.edges.filter(e => e.id !== edgeId);
+  if (state.selectedEdgeId === edgeId) state.selectedEdgeId = null;
+}
+
+function recalcEdges(nodeId) {
+  const floor = currentFloor(); if (!floor) return;
+  const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+  floor.edges.forEach(e => {
+    if (e.from === nodeId || e.to === nodeId) {
+      const a = nm[e.from], b = nm[e.to];
+      if (a && b) e.distance = +euclidDist(a, b).toFixed(3);
+    }
+  });
+}
+
+/* =============================================
+   SNAP UTILITY
+   ============================================= */
+function snap(v) {
+  const s = parseFloat(document.getElementById('snap-size').value) || 0.5;
+  return Math.round(v / s) * s;
+}
+
+/* =============================================
+   UNDO / REDO
+   ============================================= */
+function cloneState() {
+  return {
+    floors: JSON.parse(JSON.stringify(state.floors)),
+    nodeCounter: state.nodeCounter, edgeCounter: state.edgeCounter,
+    floorCounter: state.floorCounter, currentFloorIdx: state.currentFloorIdx,
+  };
+}
+function saveUndo() {
+  state.undoStack.push(cloneState());
+  if (state.undoStack.length > 80) state.undoStack.shift();
+  state.redoStack = [];
+}
+function restoreSnap(saved) {
+  state.floors = saved.floors;
+  state.nodeCounter = saved.nodeCounter; state.edgeCounter = saved.edgeCounter;
+  state.floorCounter = saved.floorCounter; state.currentFloorIdx = saved.currentFloorIdx;
+  state.selectedNodeId = null; state.selectedEdgeId = null;
+  state.connectFromId = null; state.routePath = [];
+  updateFloorTabs(); updateFloorSettings(); updateInspector();
+  updateStats(); renderCanvas(); updateRouteSelects();
+}
+function undo() {
+  if (!state.undoStack.length) { toast('Tidak ada yang di-undo', 'info'); return; }
+  state.redoStack.push(cloneState());
+  restoreSnap(state.undoStack.pop());
+  toast('Undo', 'info');
+}
+function redo() {
+  if (!state.redoStack.length) { toast('Tidak ada yang di-redo', 'info'); return; }
+  state.undoStack.push(cloneState());
+  restoreSnap(state.redoStack.pop());
+  toast('Redo', 'info');
+}
+
+/* =============================================
+   A* PATHFINDING
+   ============================================= */
+function runAStar(floor, startId, endId) {
+  const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+  if (!nm[startId] || !nm[endId]) return null;
+  const adj = {}; floor.nodes.forEach(n => adj[n.id] = []);
+  floor.edges.forEach(e => {
+    if (nm[e.from] && nm[e.to]) {
+      adj[e.from].push({ id: e.to, d: e.distance });
+      adj[e.to].push({ id: e.from, d: e.distance });
+    }
+  });
+  const h = id => euclidDist(nm[id], nm[endId]);
+  const gScore = { [startId]: 0 };
+  const fScore = { [startId]: h(startId) };
+  const came = {};
+  const open = new Set([startId]);
+  const closed = new Set();
+  while (open.size) {
+    let cur = null, best = Infinity;
+    open.forEach(id => { const f = fScore[id] ?? Infinity; if (f < best) { best = f; cur = id; } });
+    if (cur === endId) {
+      const path = []; let c = cur;
+      while (c !== undefined) { path.unshift(c); c = came[c]; }
+      return { path, totalDist: gScore[endId] };
+    }
+    open.delete(cur); closed.add(cur);
+    (adj[cur] || []).forEach(nb => {
+      if (closed.has(nb.id)) return;
+      const tg = (gScore[cur] ?? Infinity) + nb.d;
+      if (tg < (gScore[nb.id] ?? Infinity)) {
+        came[nb.id] = cur; gScore[nb.id] = tg; fScore[nb.id] = tg + h(nb.id); open.add(nb.id);
+      }
+    });
+  }
+  return null;
+}
+
+/* =============================================
+   KOORDINAT TRANSFORMS
+   ============================================= */
+function ppm() { return state.BASE_PX * state.zoom; }
+function mToC(mx, my) { return { x: mx * ppm() + state.offsetX, y: my * ppm() + state.offsetY }; }
+function cToM(cx, cy) { return { x: (cx - state.offsetX) / ppm(), y: (cy - state.offsetY) / ppm() }; }
+
+/* =============================================
+   CANVAS SETUP
+   ============================================= */
+const canvas = document.getElementById('map-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight - 36 - 28; // banner + statusbar
+  renderCanvas();
+}
+
+/* =============================================
+   RENDER PIPELINE
+   ============================================= */
+function renderCanvas() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d0f14';
+  ctx.fillRect(0, 0, W, H);
+
+  const floor = currentFloor();
+  if (!floor) {
+    ctx.fillStyle = '#4a5270'; ctx.font = '14px Inter,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Tidak ada lantai — klik "+ Tambah Lantai"', W / 2, H / 2);
+    return;
+  }
+
+  drawBlueprint(floor);
+  drawGrid(floor);
+  drawFloorBounds(floor);
+  drawEdges(floor);
+  if (state.routePath.length >= 2) drawRoute(floor);
+  if (state.tool === 'connect' && state.connectFromId && state._mouse) drawRubber(floor);
+  drawNodes(floor);
+}
+
+/* --- Blueprint --- */
+function drawBlueprint(floor) {
+  const bp = state.blueprints[floor.id];
+  if (!bp || !bp.img) return;
+  const p = ppm();
+  ctx.save();
+  ctx.globalAlpha = bp.alpha ?? 0.5;
+  ctx.drawImage(bp.img, state.offsetX, state.offsetY, floor.width * p, floor.length * p);
+  ctx.restore();
+}
+
+/* --- Grid --- */
+function drawGrid(floor) {
+  const p = ppm(), W = canvas.width, H = canvas.height;
+  const sx = Math.floor((-state.offsetX / p) - 1), ex = Math.ceil((W - state.offsetX) / p + 1);
+  const sy = Math.floor((-state.offsetY / p) - 1), ey = Math.ceil((H - state.offsetY) / p + 1);
+
+  // Minor 1m grid
+  ctx.strokeStyle = 'rgba(42,47,69,0.55)'; ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (let mx = sx; mx <= ex; mx++) { const px = mx * p + state.offsetX; ctx.moveTo(px,0); ctx.lineTo(px,H); }
+  for (let my = sy; my <= ey; my++) { const py = my * p + state.offsetY; ctx.moveTo(0,py); ctx.lineTo(W,py); }
+  ctx.stroke();
+
+  // Major 5m grid
+  ctx.strokeStyle = 'rgba(58,64,96,0.8)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let mx = sx; mx <= ex; mx+=5) { const px = mx * p + state.offsetX; ctx.moveTo(px,0); ctx.lineTo(px,H); }
+  for (let my = sy; my <= ey; my+=5) { const py = my * p + state.offsetY; ctx.moveTo(0,py); ctx.lineTo(W,py); }
+  ctx.stroke();
+
+  // Meter labels
+  if (state.zoom > 0.4) {
+    ctx.fillStyle = 'rgba(74,82,112,0.8)';
+    ctx.font = Math.max(9, 10 * state.zoom) + 'px monospace';
+    ctx.textAlign = 'left';
+    for (let mx = Math.ceil(sx/5)*5; mx <= ex; mx+=5) {
+      if (mx===0) continue;
+      ctx.fillText(mx+'m', mx*p+state.offsetX+2, state.offsetY-2);
+    }
+    for (let my = Math.ceil(sy/5)*5; my <= ey; my+=5) {
+      if (my===0) continue;
+      ctx.fillText(my+'m', state.offsetX+2, my*p+state.offsetY-2);
+    }
+  }
+}
+
+/* --- Floor boundary --- */
+function drawFloorBounds(floor) {
+  const p = ppm();
+  const ox = state.offsetX, oy = state.offsetY;
+  const w = floor.width * p, h = floor.length * p;
+  ctx.strokeStyle = 'rgba(0,229,255,0.4)'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([6,4]);
+  ctx.strokeRect(ox, oy, w, h);
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(0,229,255,0.5)'; ctx.font = '11px Inter,sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(floor.name + '  (' + floor.width + 'm x ' + floor.length + 'm)', ox+6, oy+16);
+}
+
+/* --- Edges --- */
+function drawEdges(floor) {
+  const p = ppm();
+  const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+  floor.edges.forEach(e => {
+    const nA = nm[e.from], nB = nm[e.to]; if (!nA||!nB) return;
+    const ax = nA.x*p+state.offsetX, ay = nA.y*p+state.offsetY;
+    const bx = nB.x*p+state.offsetX, by = nB.y*p+state.offsetY;
+    const sel = e.id === state.selectedEdgeId;
+    ctx.strokeStyle = sel ? '#ffd740' : 'rgba(0,229,255,0.42)';
+    ctx.lineWidth = sel ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    // Distance label
+    if (state.zoom > 0.45) {
+      const mx=(ax+bx)/2, my=(ay+by)/2;
+      const label = e.distance.toFixed(2)+'m';
+      ctx.font = Math.max(9, 10*Math.min(state.zoom,1.4))+'px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(13,15,20,0.75)';
+      ctx.fillRect(mx-tw/2-2, my-13, tw+4, 12);
+      ctx.fillStyle = sel ? '#ffd740' : 'rgba(0,229,255,0.85)';
+      ctx.fillText(label, mx, my);
+      ctx.textBaseline = 'alphabetic';
+    }
+  });
+}
+
+/* --- Route highlight --- */
+function drawRoute(floor) {
+  const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+  const p = ppm();
+  ctx.save();
+  ctx.strokeStyle = '#00e676'; ctx.lineWidth = 3.5;
+  ctx.setLineDash([8,4]); ctx.shadowColor = '#00e676'; ctx.shadowBlur = 10;
+  ctx.beginPath();
+  state.routePath.forEach((id,i) => {
+    const n = nm[id]; if (!n) return;
+    const px = n.x*p+state.offsetX, py = n.y*p+state.offsetY;
+    if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]); ctx.shadowBlur=0; ctx.restore();
+}
+
+/* --- Rubber-band line for connect tool --- */
+function drawRubber(floor) {
+  const fn = floor.nodes.find(n => n.id === state.connectFromId); if (!fn) return;
+  const p = ppm();
+  const fx = fn.x*p+state.offsetX, fy = fn.y*p+state.offsetY;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,215,64,0.6)'; ctx.lineWidth = 1.5; ctx.setLineDash([5,3]);
+  ctx.beginPath(); ctx.moveTo(fx,fy); ctx.lineTo(state._mouse.x, state._mouse.y); ctx.stroke();
+  ctx.setLineDash([]); ctx.restore();
+}
+
+/* --- Nodes --- */
+function drawNodes(floor) {
+  const p = ppm();
+  floor.nodes.forEach(n => {
+    const tp = NODE_TYPES[n.type] || NODE_TYPES.junction;
+    const px = n.x*p+state.offsetX, py = n.y*p+state.offsetY;
+    const baseR = tp.radius * Math.min(state.zoom, 1.6);
+    const sel = n.id === state.selectedNodeId;
+    const isConn = n.id === state.connectFromId;
+    const r = baseR + (sel ? 2 : 0);
+
+    // Glow effect
+    if (sel || isConn) {
+      ctx.save();
+      ctx.shadowColor = isConn ? '#ffd740' : tp.color; ctx.shadowBlur = 18;
+      ctx.beginPath(); ctx.arc(px,py,r+4,0,Math.PI*2); ctx.fillStyle='transparent'; ctx.fill();
+      ctx.restore();
+    }
+
+    // Body
+    ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2);
+    ctx.fillStyle = tp.color; ctx.fill();
+    ctx.strokeStyle = sel ? '#ffffff' : (isConn ? '#ffd740' : tp.stroke);
+    ctx.lineWidth = sel ? 2.5 : 1.5; ctx.stroke();
+
+    // Icon for stairs / elevator
+    if (n.type==='stairs'||n.type==='elevator') {
+      ctx.fillStyle = '#000';
+      ctx.font = Math.max(8, 9*Math.min(state.zoom,1.5))+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(n.type==='stairs'?'▲':'E', px, py);
+    }
+
+    // Name label
+    if (state.zoom > 0.45) {
+      ctx.fillStyle = 'rgba(232,236,245,0.9)';
+      ctx.font = Math.max(9, 10*Math.min(state.zoom,1.4))+'px Inter,sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.fillText(n.name||n.id, px, py+r+2);
+    }
+
+    // ID label small
+    if (state.zoom > 0.8) {
+      ctx.fillStyle = 'rgba(74,82,112,0.8)';
+      ctx.font = Math.max(8, 9*Math.min(state.zoom,1.4))+'px monospace';
+      ctx.textAlign='center'; ctx.textBaseline='bottom';
+      ctx.fillText(n.id, px, py-r-2);
+    }
+  });
+}
+
+/* =============================================
+   HIT TESTING
+   ============================================= */
+function hitNode(floor, cx, cy) {
+  const p = ppm();
+  for (let i = floor.nodes.length-1; i>=0; i--) {
+    const n = floor.nodes[i];
+    const tp = NODE_TYPES[n.type]||NODE_TYPES.junction;
+    const px = n.x*p+state.offsetX, py = n.y*p+state.offsetY;
+    const r = (tp.radius+5)*Math.min(state.zoom,1.6);
+    if ((cx-px)**2+(cy-py)**2 <= r*r) return n;
+  }
+  return null;
+}
+
+function hitEdge(floor, cx, cy) {
+  const p = ppm();
+  const nm = {}; floor.nodes.forEach(n => nm[n.id]=n);
+  const THRESH = 6;
+  for (let i = floor.edges.length-1; i>=0; i--) {
+    const e = floor.edges[i];
+    const nA=nm[e.from], nB=nm[e.to]; if(!nA||!nB) continue;
+    const ax=nA.x*p+state.offsetX, ay=nA.y*p+state.offsetY;
+    const bx=nB.x*p+state.offsetX, by=nB.y*p+state.offsetY;
+    const dx=bx-ax, dy=by-ay;
+    const len2 = dx*dx+dy*dy; if (len2===0) continue;
+    const t = Math.max(0, Math.min(1, ((cx-ax)*dx+(cy-ay)*dy)/len2));
+    const d = Math.sqrt((cx-(ax+t*dx))**2+(cy-(ay+t*dy))**2);
+    if (d<=THRESH) return e;
+  }
+  return null;
+}
+
+/* =============================================
+   MOUSE EVENTS
+   ============================================= */
+function canvasXY(e) { const r=canvas.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+
+canvas.addEventListener('mousemove', e => {
+  const {x,y} = canvasXY(e);
+  state._mouse = {x,y};
+
+  // Update status bar
+  const m = cToM(x,y);
+  document.getElementById('s-x').textContent = m.x.toFixed(2);
+  document.getElementById('s-y').textContent = m.y.toFixed(2);
+
+  if (state.isPanning) {
+    state.offsetX += x - state.panStartX; state.offsetY += y - state.panStartY;
+    state.panStartX = x; state.panStartY = y;
+    renderCanvas(); return;
+  }
+
+  if (state.draggingNodeId) {
+    const floor = currentFloor(); if(!floor) return;
+    const n = floor.nodes.find(nd=>nd.id===state.draggingNodeId); if(!n) return;
+    const m2 = cToM(x,y);
+    n.x = +snap(m2.x).toFixed(3); n.y = +snap(m2.y).toFixed(3);
+    recalcEdges(n.id); updateInspector(); renderCanvas(); return;
+  }
+
+  if (state.tool==='connect' && state.connectFromId) renderCanvas();
+
+  // Cursor style
+  if (state.spaceDown || e.buttons===2) canvas.style.cursor='grab';
+  else if (state.tool==='select') {
+    const floor=currentFloor();
+    canvas.style.cursor = (floor && hitNode(floor,x,y)) ? 'pointer' : 'default';
+  } else canvas.style.cursor='crosshair';
+});
+
+canvas.addEventListener('mousedown', e => {
+  const {x,y} = canvasXY(e);
+  const floor = currentFloor();
+
+  // Right-click or space = pan
+  if (e.button===2 || state.spaceDown) {
+    state.isPanning=true; state.panStartX=x; state.panStartY=y;
+    canvas.style.cursor='grabbing'; return;
+  }
+  if (e.button!==0||!floor) return;
+
+  const m = cToM(x,y);
+
+  if (state.tool==='add-node') {
+    saveUndo();
+    const node = addNode(snap(m.x), snap(m.y));
+    state.selectedNodeId=node.id; state.selectedEdgeId=null;
+    updateInspector(); updateStats(); renderCanvas(); autosave(); return;
+  }
+
+  if (state.tool==='connect') {
+    const hit = hitNode(floor,x,y); if(!hit) return;
+    if (!state.connectFromId) {
+      state.connectFromId=hit.id;
+      document.getElementById('conn-hint').style.display='block';
+    } else {
+      if (hit.id!==state.connectFromId) {
+        saveUndo();
+        const edge=addEdge(state.connectFromId,hit.id);
+        if (!edge) toast('Edge sudah ada atau tidak valid','error');
+        else { toast('Jalur ditambahkan','success'); updateStats(); autosave(); }
+      }
+      state.connectFromId=null;
+      document.getElementById('conn-hint').style.display='none';
+    }
+    renderCanvas(); return;
+  }
+
+  if (state.tool==='select') {
+    const hitN = hitNode(floor,x,y);
+    if (hitN) {
+      state.selectedNodeId=hitN.id; state.selectedEdgeId=null;
+      state.draggingNodeId=hitN.id;
+      saveUndo();
+    } else {
+      const hitE = hitEdge(floor,x,y);
+      if (hitE) { state.selectedEdgeId=hitE.id; state.selectedNodeId=null; }
+      else { state.selectedNodeId=null; state.selectedEdgeId=null; }
+    }
+    updateInspector(); renderCanvas(); return;
+  }
+
+  if (state.tool==='route') {
+    const hitN=hitNode(floor,x,y); if(!hitN) return;
+    const fs=document.getElementById('route-from'), ts=document.getElementById('route-to');
+    if (!fs.value) fs.value=hitN.id; else ts.value=hitN.id;
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (state.draggingNodeId) autosave();
+  state.isPanning=false; state.draggingNodeId=null;
+  canvas.style.cursor = state.tool==='select' ? 'default' : 'crosshair';
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const {x,y}=canvasXY(e);
+  const delta = e.deltaY>0 ? 0.88 : 1.14;
+  const mBefore=cToM(x,y);
+  state.zoom = Math.max(0.1, Math.min(8, state.zoom*delta));
+  const mAfter=cToM(x,y);
+  state.offsetX += (mAfter.x-mBefore.x)*ppm();
+  state.offsetY += (mAfter.y-mBefore.y)*ppm();
+  document.getElementById('s-zoom').textContent = Math.round(state.zoom*100);
+  renderCanvas();
+}, {passive:false});
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* =============================================
+   KEYBOARD EVENTS
+   ============================================= */
+document.addEventListener('keydown', e => {
+  if (e.code==='Space' && !e.target.matches('input,select,textarea')) {
+    state.spaceDown=true; canvas.style.cursor='grab'; e.preventDefault();
+  }
+  if (e.ctrlKey && e.key==='z') { e.preventDefault(); undo(); }
+  if (e.ctrlKey && e.key==='y') { e.preventDefault(); redo(); }
+  if (!e.ctrlKey && !e.target.matches('input,select,textarea')) {
+    if (e.key==='1') setTool('add-node');
+    if (e.key==='2') setTool('connect');
+    if (e.key==='3') setTool('select');
+    if (e.key==='4') setTool('route');
+    if ((e.key==='Delete'||e.key==='Backspace') && state.tool==='select') {
+      e.preventDefault();
+      if (state.selectedNodeId) doDeleteNode();
+      else if (state.selectedEdgeId) doDeleteEdge();
+    }
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.code==='Space') { state.spaceDown=false; canvas.style.cursor=state.tool==='select'?'default':'crosshair'; }
+});
+
+/* =============================================
+   TOOL MANAGEMENT
+   ============================================= */
+const BANNERS = {
+  'add-node': { text:'Mode: Tambah Node — Klik canvas untuk meletakkan node baru', color:'#00e5ff' },
+  'connect':  { text:'Mode: Hubung Jalur — Klik node A, lalu klik node B', color:'#ffd740' },
+  'select':   { text:'Mode: Pilih & Geser — Klik pilih, drag untuk pindahkan, Del untuk hapus', color:'#bb86fc' },
+  'route':    { text:'Mode: Uji Rute (A*) — Pilih node awal & tujuan di Inspector', color:'#00e676' },
+};
+
+function setTool(tool) {
+  state.tool=tool; state.connectFromId=null;
+  document.getElementById('conn-hint').style.display='none';
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-tool="'+tool+'"]')?.classList.add('active');
+  const b=BANNERS[tool];
+  const banner=document.getElementById('mode-banner');
+  banner.style.cssText='height:36px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);letter-spacing:.3px;flex-shrink:0;background:linear-gradient(90deg,'+b.color+'18,transparent);border-bottom-color:'+b.color+'44;color:'+b.color;
+  banner.textContent=b.text;
+  if (tool==='route') { showRouteInspector(); updateRouteSelects(); }
+  else { state.routePath=[]; updateInspector(); renderCanvas(); }
+}
+document.querySelectorAll('.tool-btn').forEach(btn =>
+  btn.addEventListener('click', () => setTool(btn.dataset.tool)));
+
+/* =============================================
+   INSPECTOR
+   ============================================= */
+function updateInspector() {
+  const floor=currentFloor();
+  if (!floor||state.tool==='route') { showRouteInspector(); return; }
+  if (state.selectedNodeId) {
+    const n=floor.nodes.find(nd=>nd.id===state.selectedNodeId);
+    if (n) { showNodeInspector(n); return; }
+  }
+  if (state.selectedEdgeId) {
+    const e=floor.edges.find(ed=>ed.id===state.selectedEdgeId);
+    if (e) { showEdgeInspector(e,floor); return; }
+  }
+  showNoneInspector();
+}
+
+function showNoneInspector() {
+  document.getElementById('insp-none').style.display='flex';
+  document.getElementById('insp-node').style.display='none';
+  document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-route').style.display='none';
+}
+function showNodeInspector(n) {
+  document.getElementById('insp-none').style.display='none';
+  document.getElementById('insp-node').style.display='block';
+  document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-route').style.display='none';
+  document.getElementById('node-id-input').value=n.id;
+  document.getElementById('node-name-input').value=n.name||'';
+  document.getElementById('node-type-input').value=n.type;
+  document.getElementById('node-x-input').value=n.x;
+  document.getElementById('node-y-input').value=n.y;
+  const tp=NODE_TYPES[n.type]||NODE_TYPES.junction;
+  const badge=document.getElementById('node-type-badge');
+  badge.textContent=tp.label; badge.style.color=tp.color; badge.style.borderColor=tp.color; badge.style.background=tp.color+'18';
+  const ctf=document.getElementById('connects-to-field');
+  ctf.style.display=(n.type==='stairs'||n.type==='elevator')?'block':'none';
+  document.getElementById('node-connects-input').value=n.connectsTo||'';
+}
+function showEdgeInspector(e,floor) {
+  document.getElementById('insp-none').style.display='none';
+  document.getElementById('insp-node').style.display='none';
+  document.getElementById('insp-edge').style.display='block';
+  document.getElementById('insp-route').style.display='none';
+  const nm={}; floor.nodes.forEach(n=>nm[n.id]=n);
+  const nA=nm[e.from],nB=nm[e.to];
+  document.getElementById('edge-id-input').value=e.id;
+  document.getElementById('edge-from-input').value=e.from+(nA?' ('+nA.name+')':'');
+  document.getElementById('edge-to-input').value=e.to+(nB?' ('+nB.name+')':'');
+  document.getElementById('edge-dist-input').value=e.distance.toFixed(3)+' m';
+}
+function showRouteInspector() {
+  document.getElementById('insp-none').style.display='none';
+  document.getElementById('insp-node').style.display='none';
+  document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-route').style.display='block';
+}
+
+// Live-edit node properties
+['node-name-input','node-x-input','node-y-input','node-type-input','node-connects-input'].forEach(id=>{
+  document.getElementById(id)?.addEventListener('input',()=>{
+    const floor=currentFloor(); if(!floor||!state.selectedNodeId) return;
+    const n=floor.nodes.find(nd=>nd.id===state.selectedNodeId); if(!n) return;
+    n.name=document.getElementById('node-name-input').value;
+    n.type=document.getElementById('node-type-input').value;
+    const nx=parseFloat(document.getElementById('node-x-input').value);
+    const ny=parseFloat(document.getElementById('node-y-input').value);
+    if(!isNaN(nx)) n.x=+nx.toFixed(3);
+    if(!isNaN(ny)) n.y=+ny.toFixed(3);
+    n.connectsTo=document.getElementById('node-connects-input').value.trim()||undefined;
+    document.getElementById('connects-to-field').style.display=(n.type==='stairs'||n.type==='elevator')?'block':'none';
+    const tp=NODE_TYPES[n.type]||NODE_TYPES.junction;
+    const badge=document.getElementById('node-type-badge');
+    badge.textContent=tp.label; badge.style.color=tp.color; badge.style.borderColor=tp.color; badge.style.background=tp.color+'18';
+    if(id==='node-x-input'||id==='node-y-input') recalcEdges(n.id);
+    renderCanvas(); autosave();
+  });
+});
+
+function doDeleteNode() {
+  if(!state.selectedNodeId) return;
+  saveUndo(); removeNode(state.selectedNodeId);
+  updateInspector(); updateStats(); renderCanvas(); autosave(); toast('Node dihapus','info');
+}
+function doDeleteEdge() {
+  if(!state.selectedEdgeId) return;
+  saveUndo(); removeEdge(state.selectedEdgeId);
+  updateInspector(); updateStats(); renderCanvas(); autosave(); toast('Jalur dihapus','info');
+}
+document.getElementById('btn-delete-node').addEventListener('click', doDeleteNode);
+document.getElementById('btn-delete-edge').addEventListener('click', doDeleteEdge);
+
+/* =============================================
+   ROUTE TEST
+   ============================================= */
+function updateRouteSelects() {
+  const floor=currentFloor();
+  const fs=document.getElementById('route-from'), ts=document.getElementById('route-to');
+  const pf=fs.value, pt=ts.value;
+  fs.innerHTML='<option value="">-- pilih --</option>';
+  ts.innerHTML='<option value="">-- pilih --</option>';
+  if(!floor) return;
+  floor.nodes.forEach(n=>{
+    const lbl=n.id+(n.name?' ('+n.name+')':'');
+    fs.innerHTML+=`<option value="${n.id}">${lbl}</option>`;
+    ts.innerHTML+=`<option value="${n.id}">${lbl}</option>`;
+  });
+  if(pf) fs.value=pf; if(pt) ts.value=pt;
+}
+
+document.getElementById('btn-run-route').addEventListener('click',()=>{
+  const floor=currentFloor();
+  const fromId=document.getElementById('route-from').value;
+  const toId=document.getElementById('route-to').value;
+  const box=document.getElementById('route-result-box');
+  if(!fromId||!toId){box.innerHTML='<div class="route-result fail">Pilih node awal dan tujuan terlebih dahulu.</div>';return;}
+  if(fromId===toId){box.innerHTML='<div class="route-result fail">Node awal dan tujuan sama.</div>';return;}
+  const res=runAStar(floor,fromId,toId);
+  if(!res){
+    box.innerHTML='<div class="route-result fail">&#x274C; Tidak ada rute yang menghubungkan kedua node ini.</div>';
+    state.routePath=[];
+  } else {
+    state.routePath=res.path;
+    const spd=parseFloat(document.getElementById('walk-speed').value)||1.4;
+    const time=res.totalDist/spd;
+    const mins=Math.floor(time/60), secs=Math.round(time%60);
+    box.innerHTML=`<div class="route-result success">
+      <div class="route-stat"><span class="key">&#x2705; Rute ditemukan</span></div>
+      <div class="route-stat"><span class="key">Jarak total</span><span class="val">${res.totalDist.toFixed(2)} m</span></div>
+      <div class="route-stat"><span class="key">Estimasi waktu</span><span class="val">${mins>0?mins+' mnt ':''}${secs} dtk</span></div>
+      <div class="route-stat"><span class="key">Jumlah node</span><span class="val">${res.path.length}</span></div>
+      <div class="route-stat"><span class="key">Jalur</span><span class="val">${res.path.join(' → ')}</span></div>
+    </div>`;
+  }
+  renderCanvas();
+});
+document.getElementById('btn-clear-route').addEventListener('click',()=>{
+  state.routePath=[];
+  document.getElementById('route-result-box').innerHTML='';
+  renderCanvas();
+});
+
+/* =============================================
+   FLOOR UI
+   ============================================= */
+function updateFloorTabs() {
+  const c=document.getElementById('floor-tabs');
+  c.innerHTML='';
+  state.floors.forEach((f,i)=>{
+    const btn=document.createElement('button');
+    btn.className='floor-tab'+(i===state.currentFloorIdx?' active':'');
+    btn.textContent=f.name;
+    btn.addEventListener('click',()=>switchFloor(i));
+    c.appendChild(btn);
+  });
+}
+function updateFloorSettings() {
+  const f=currentFloor(); if(!f) return;
+  document.getElementById('floor-name').value=f.name;
+  document.getElementById('floor-width').value=f.width;
+  document.getElementById('floor-length').value=f.length;
+  document.getElementById('floor-north').value=f.northOffset;
+}
+['floor-name','floor-width','floor-length','floor-north'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{
+    const f=currentFloor(); if(!f) return;
+    f.name=document.getElementById('floor-name').value;
+    f.width=parseFloat(document.getElementById('floor-width').value)||40;
+    f.length=parseFloat(document.getElementById('floor-length').value)||25;
+    f.northOffset=parseFloat(document.getElementById('floor-north').value)||0;
+    updateFloorTabs(); renderCanvas(); autosave();
+  });
+});
+document.getElementById('btn-add-floor').addEventListener('click',()=>{
+  openModal('add-floor-modal');
+  document.getElementById('new-floor-name').value='Lantai '+(state.floors.length+1);
+});
+document.getElementById('btn-add-floor-cancel').addEventListener('click',()=>closeModal('add-floor-modal'));
+document.getElementById('btn-add-floor-ok').addEventListener('click',()=>{
+  saveUndo();
+  const name=document.getElementById('new-floor-name').value||'Lantai Baru';
+  const width=parseFloat(document.getElementById('new-floor-width').value)||40;
+  const length=parseFloat(document.getElementById('new-floor-length').value)||25;
+  const f=createFloor(name,width,length);
+  state.floors.push(f); state.currentFloorIdx=state.floors.length-1;
+  closeModal('add-floor-modal');
+  updateFloorTabs(); updateFloorSettings(); updateStats(); fitView(); autosave();
+  toast('Lantai "'+name+'" ditambahkan','success');
+});
+document.getElementById('btn-del-floor').addEventListener('click',()=>{
+  if(state.floors.length<=1){toast('Harus ada minimal satu lantai','error');return;}
+  openModal('del-floor-modal');
+});
+document.getElementById('btn-del-floor-cancel').addEventListener('click',()=>closeModal('del-floor-modal'));
+document.getElementById('btn-del-floor-ok').addEventListener('click',()=>{
+  saveUndo();
+  const name=currentFloor()?.name, id=currentFloor()?.id;
+  state.floors.splice(state.currentFloorIdx,1);
+  if(state.blueprints[id]) delete state.blueprints[id];
+  state.currentFloorIdx=Math.min(state.currentFloorIdx,state.floors.length-1);
+  closeModal('del-floor-modal');
+  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); renderCanvas(); autosave();
+  toast('Lantai "'+name+'" dihapus','info');
+});
+
+/* =============================================
+   STATS
+   ============================================= */
+function updateStats() {
+  let tn=0,te=0;
+  state.floors.forEach(f=>{tn+=f.nodes.length;te+=f.edges.length;});
+  document.getElementById('stat-nodes').textContent=tn;
+  document.getElementById('stat-edges').textContent=te;
+  document.getElementById('stat-floors').textContent=state.floors.length;
+}
+
+/* =============================================
+   BLUEPRINT
+   ============================================= */
+document.getElementById('btn-load-bp').addEventListener('click',()=>document.getElementById('bp-file-input').click());
+document.getElementById('bp-file-input').addEventListener('change',e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const floor=currentFloor(); if(!floor) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      if(!state.blueprints[floor.id]) state.blueprints[floor.id]={};
+      state.blueprints[floor.id].img=img;
+      state.blueprints[floor.id].b64=ev.target.result;
+      state.blueprints[floor.id].alpha=parseFloat(document.getElementById('bp-alpha').value)/100;
+      const prev=document.getElementById('bp-preview');
+      prev.innerHTML=''; const pi=document.createElement('img'); pi.src=ev.target.result; prev.appendChild(pi);
+      document.getElementById('btn-remove-bp').style.display='block';
+      renderCanvas(); toast('Blueprint dipasang','success');
+    };
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file); e.target.value='';
+});
+document.getElementById('bp-alpha').addEventListener('input',e=>{
+  const floor=currentFloor(); if(!floor) return;
+  document.getElementById('bp-alpha-val').textContent=e.target.value;
+  if(state.blueprints[floor.id]){state.blueprints[floor.id].alpha=parseFloat(e.target.value)/100;renderCanvas();}
+});
+document.getElementById('btn-remove-bp').addEventListener('click',()=>{
+  const floor=currentFloor(); if(!floor) return;
+  delete state.blueprints[floor.id];
+  document.getElementById('bp-preview').innerHTML='<span>Belum ada gambar</span>';
+  document.getElementById('btn-remove-bp').style.display='none';
+  renderCanvas(); toast('Blueprint dihapus','info');
+});
+
+/* =============================================
+   VALIDASI
+   ============================================= */
+function validateMap() {
+  const w=[];
+  state.floors.forEach(floor=>{
+    const nm={}; floor.nodes.forEach(n=>nm[n.id]=n);
+    if(!floor.nodes.some(n=>n.type==='entrance')) w.push('['+floor.name+'] Tidak ada node bertipe Entrance');
+    floor.nodes.forEach(n=>{
+      if(!n.name||n.name===n.id) w.push('['+floor.name+'] Node '+n.id+' tidak memiliki nama yang deskriptif');
+      if(n.x<0||n.x>floor.width||n.y<0||n.y>floor.length) w.push('['+floor.name+'] Node '+n.id+' ('+n.name+') di luar batas lantai');
+    });
+    const conn=new Set(); floor.edges.forEach(e=>{conn.add(e.from);conn.add(e.to);});
+    floor.nodes.forEach(n=>{ if(!conn.has(n.id)) w.push('['+floor.name+'] Node '+n.id+' ('+n.name+') tidak terhubung ke jalur manapun'); });
+    if(floor.nodes.length>1&&floor.edges.length>0){
+      const adj={}; floor.nodes.forEach(n=>adj[n.id]=[]);
+      floor.edges.forEach(e=>{adj[e.from]?.push(e.to);adj[e.to]?.push(e.from);});
+      const vis=new Set(), start=floor.nodes.find(n=>conn.has(n.id))?.id;
+      if(start){
+        const q=[start]; vis.add(start);
+        while(q.length){const c=q.shift();(adj[c]||[]).forEach(nb=>{if(!vis.has(nb)){vis.add(nb);q.push(nb);}});}
+        const connNodes=floor.nodes.filter(n=>conn.has(n.id));
+        if(connNodes.some(n=>!vis.has(n.id))) w.push('['+floor.name+'] Graf tidak tersambung sepenuhnya');
+      }
+    }
+  });
+  return w;
+}
+function renderWarnings(warnings, container) {
+  if(!warnings.length){container.innerHTML='';return;}
+  container.innerHTML='<div class="warnings-list">'+
+    warnings.map(w=>'<div class="warning-item"><span>&#x26A0;</span><span>'+w+'</span></div>').join('')+'</div>';
+}
+
+/* =============================================
+   EKSPOR / IMPOR
+   ============================================= */
+function buildJSON() {
+  const incB64=document.getElementById('bp-include-b64').checked;
+  const obj={
+    version:VERSION,
+    coordinateSystem:{unit:'meter',origin:'top-left',yAxis:'down'},
+    floors:state.floors.map(f=>{
+      const out={
+        id:f.id, name:f.name, width:f.width, length:f.length, northOffset:f.northOffset,
+        nodes:f.nodes.map(n=>{const no={id:n.id,name:n.name,type:n.type,x:n.x,y:n.y};if(n.connectsTo)no.connectsTo=n.connectsTo;return no;}),
+        edges:f.edges.map(e=>({id:e.id,from:e.from,to:e.to,distance:e.distance})),
+      };
+      if(incB64&&state.blueprints[f.id]?.b64) out.blueprint=state.blueprints[f.id].b64;
+      return out;
+    }),
+  };
+  return JSON.stringify(obj,null,2);
+}
+
+document.getElementById('btn-export').addEventListener('click',()=>{
+  const json=buildJSON();
+  const warnings=validateMap();
+  renderWarnings(warnings,document.getElementById('export-warnings-box'));
+  renderWarnings(warnings,document.getElementById('validation-warnings'));
+  document.getElementById('export-textarea').value=json;
+  openModal('export-modal');
+});
+document.getElementById('btn-export-copy').addEventListener('click',()=>{
+  navigator.clipboard.writeText(document.getElementById('export-textarea').value)
+    .then(()=>toast('Disalin ke clipboard!','success'));
+});
+document.getElementById('btn-export-download').addEventListener('click',()=>{
+  const blob=new Blob([document.getElementById('export-textarea').value],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='map.json'; a.click(); URL.revokeObjectURL(url);
+  toast('map.json diunduh','success');
+});
+document.getElementById('btn-export-close').addEventListener('click',()=>closeModal('export-modal'));
+
+document.getElementById('btn-import').addEventListener('click',()=>document.getElementById('import-file-input').click());
+document.getElementById('import-file-input').addEventListener('change',e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(!data.floors||!Array.isArray(data.floors)) throw new Error('Field "floors" tidak ditemukan');
+      if(data.version!==VERSION&&!confirm('Versi file ('+data.version+') berbeda. Lanjutkan?')) return;
+      saveUndo();
+      state.floors=data.floors.map(f=>({
+        id:f.id, name:f.name||'Lantai', width:f.width||40, length:f.length||25, northOffset:f.northOffset||0,
+        nodes:(f.nodes||[]).map(n=>({id:n.id,name:n.name||'',type:n.type||'junction',x:n.x,y:n.y,...(n.connectsTo?{connectsTo:n.connectsTo}:{})})),
+        edges:(f.edges||[]).map(e=>({id:e.id,from:e.from,to:e.to,distance:e.distance||0})),
+      }));
+      // Restore blueprints if embedded
+      data.floors.forEach(f=>{
+        if(f.blueprint){const img=new Image();img.onload=()=>{state.blueprints[f.id]={img,b64:f.blueprint,alpha:.5};renderCanvas();};img.src=f.blueprint;}
+      });
+      // Recalc counters
+      let mn=0,me=0,mf=0;
+      state.floors.forEach(f=>{
+        const fn=parseInt(f.id.replace('L',''))||0; if(fn>mf) mf=fn;
+        f.nodes.forEach(n=>{const nn=parseInt(n.id.replace('n',''))||0;if(nn>mn)mn=nn;});
+        f.edges.forEach(e=>{const en=parseInt(e.id.replace('e',''))||0;if(en>me)me=en;});
+      });
+      state.nodeCounter=mn; state.edgeCounter=me; state.floorCounter=mf;
+      state.currentFloorIdx=0; state.selectedNodeId=null; state.selectedEdgeId=null; state.routePath=[];
+      updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); fitView(); autosave();
+      toast('Import berhasil!','success');
+    }catch(err){toast('Gagal import: '+err.message,'error');console.error(err);}
+  };
+  reader.readAsText(file); e.target.value='';
+});
+
+/* =============================================
+   QR CODE
+   ============================================= */
+document.getElementById('btn-qr').addEventListener('click',()=>{
+  const floor=currentFloor(); if(!floor||!state.selectedNodeId) return;
+  const n=floor.nodes.find(nd=>nd.id===state.selectedNodeId); if(!n) return;
+  const payload=JSON.stringify({node:n.id,floor:floor.id,heading:floor.northOffset});
+  document.getElementById('qr-json-preview').textContent=payload;
+  const container=document.getElementById('qr-modal-canvas');
+  container.innerHTML='';
+  try{
+    new QRCode(container,{text:payload,width:200,height:200,colorDark:'#0d0f14',colorLight:'#e8ecf5',correctLevel:QRCode.CorrectLevel.H});
+  }catch(err){container.innerHTML='<div style="color:var(--red);font-size:11px">Error: QR library gagal dimuat. Pastikan terhubung ke internet.</div>';}
+  openModal('qr-modal');
+});
+document.getElementById('btn-qr-download').addEventListener('click',()=>{
+  const c=document.querySelector('#qr-modal-canvas canvas');
+  if(!c){toast('QR belum digenerate','error');return;}
+  const a=document.createElement('a'); a.href=c.toDataURL('image/png');
+  a.download='qr-'+(state.selectedNodeId||'node')+'.png'; a.click();
+  toast('QR diunduh','success');
+});
+document.getElementById('btn-qr-close').addEventListener('click',()=>closeModal('qr-modal'));
+
+/* =============================================
+   FIT VIEW
+   ============================================= */
+function fitView() {
+  const floor=currentFloor(); if(!floor) return;
+  const W=canvas.width, H=canvas.height, pad=60;
+  const sx=(W-pad*2)/floor.width, sy=(H-pad*2)/floor.length;
+  const zPPM=Math.min(sx,sy);
+  state.zoom=zPPM/state.BASE_PX;
+  state.offsetX=(W-floor.width*zPPM)/2;
+  state.offsetY=(H-floor.length*zPPM)/2;
+  document.getElementById('s-zoom').textContent=Math.round(state.zoom*100);
+  renderCanvas();
+}
+document.getElementById('btn-fit').addEventListener('click',fitView);
+
+/* =============================================
+   TEMPLATES
+   ============================================= */
+function resetAll() {
+  state.floors=[]; state.blueprints={};
+  state.nodeCounter=0; state.edgeCounter=0; state.floorCounter=0;
+  state.selectedNodeId=null; state.selectedEdgeId=null; state.routePath=[];
+}
+document.getElementById('btn-template-empty').addEventListener('click',()=>{
+  if(state.floors.length>0&&!confirm('Ini akan menghapus semua data saat ini. Lanjutkan?')) return;
+  saveUndo(); resetAll();
+  state.floors.push(createFloor('Lantai 1',40,25)); state.currentFloorIdx=0;
+  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); fitView(); autosave();
+  toast('Template kosong dimuat','success');
+});
+document.getElementById('btn-template-sample').addEventListener('click',()=>{
+  if(!confirm('Ini akan mengganti semua data dengan contoh denah. Lanjutkan?')) return;
+  saveUndo(); resetAll();
+  const f=createFloor('Lantai 1 (Contoh)',30,20);
+  state.floors.push(f);
+  const nd=[
+    {n:'Pintu Masuk Utama',t:'entrance',x:15,y:19},
+    {n:'Lobby',t:'junction',x:15,y:16},
+    {n:'Simpang Kiri',t:'junction',x:8,y:16},
+    {n:'Simpang Kanan',t:'junction',x:22,y:16},
+    {n:'Ruang Konferensi',t:'room',x:5,y:10},
+    {n:'Parkir A1',t:'slot',x:10,y:10},
+    {n:'Parkir A2',t:'slot',x:14,y:10},
+    {n:'Parkir B1',t:'slot',x:18,y:10},
+    {n:'Persimpangan Atas',t:'junction',x:15,y:8},
+    {n:'Tangga ke Lt 2',t:'stairs',x:25,y:5},
+    {n:'Lift',t:'elevator',x:28,y:5},
+  ];
+  nd.forEach(d=>addNode(d.x,d.y,d.t,d.n));
+  const ns=f.nodes;
+  [[0,1],[1,2],[1,3],[2,4],[2,5],[3,6],[3,7],[1,8],[8,5],[8,6],[8,7],[8,9],[9,10]].forEach(([a,b])=>addEdge(ns[a].id,ns[b].id));
+  state.currentFloorIdx=0;
+  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); fitView(); autosave();
+  toast('Contoh denah dimuat','success');
+});
+
+/* =============================================
+   AUTOSAVE
+   ============================================= */
+function autosave() {
+  try{localStorage.setItem(AUTOSAVE_KEY,JSON.stringify({floors:state.floors,nodeCounter:state.nodeCounter,edgeCounter:state.edgeCounter,floorCounter:state.floorCounter,currentFloorIdx:state.currentFloorIdx}));}catch(e){}
+}
+function loadAutosave() {
+  try{
+    const raw=localStorage.getItem(AUTOSAVE_KEY); if(!raw) return false;
+    const d=JSON.parse(raw); if(!d.floors||!d.floors.length) return false;
+    state.floors=d.floors; state.nodeCounter=d.nodeCounter||0;
+    state.edgeCounter=d.edgeCounter||0; state.floorCounter=d.floorCounter||0;
+    state.currentFloorIdx=d.currentFloorIdx||0; return true;
+  }catch(e){return false;}
+}
+
+document.getElementById('btn-undo').addEventListener('click',undo);
+document.getElementById('btn-redo').addEventListener('click',redo);
+
+/* =============================================
+   MODAL HELPERS
+   ============================================= */
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+
+/* =============================================
+   TOAST
+   ============================================= */
+function toast(msg,type='info'){
+  const c=document.getElementById('toast-container');
+  const el=document.createElement('div'); el.className='toast '+type; el.textContent=msg;
+  c.appendChild(el); setTimeout(()=>el.remove(),2900);
+}
+
+/* =============================================
+   INISIALISASI
+   ============================================= */
+window.addEventListener('resize', resizeCanvas);
+
+function init() {
+  const loaded=loadAutosave();
+  if(!loaded){ state.floors.push(createFloor('Lantai 1',40,25)); }
+  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); updateRouteSelects();
+  setTool('add-node');
+  resizeCanvas();
+  setTimeout(fitView, 100);
+  if(loaded) toast('Data tersimpan berhasil dimuat \u2713','success');
+}
+
+init();
+</script>
+</body>
+</html>
