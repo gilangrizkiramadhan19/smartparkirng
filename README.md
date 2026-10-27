@@ -106,6 +106,66 @@ Fitur AR ini merender:
 6. **Mode Simulasi AR:** Tersedia tombol mode simulasi agar rute AR dapat didemokan tanpa harus berjalan fisik.
 7. **HUD & Mini-Map:** Menampilkan instruksi *turn-by-turn*, sisa jarak, ETA, dan denah 2D kecil di pojok layar.
 
+## Peta JSON (Indoor AR Map Editor)
+
+Aplikasi smartparking secara otomatis memuat denah indoor dari asset bundel `assets/maps/map.json` hasil ekspor **Indoor AR Map Editor**. Pengguna akhir tidak perlu mengimpor file secara manual.
+
+### Alur Programmer:
+1. Desain atau edit denah pada **Indoor AR Map Editor** (`indoor_map_editor.html`).
+2. Ekspor file JSON dari editor.
+3. Simpan / salin file tersebut ke `assets/maps/map.json` di project ini (jangan ubah format strukturnya).
+4. Pastikan `assets/maps/map.json` sudah terdaftar di `pubspec.yaml` bagian `flutter > assets`.
+5. Build ulang aplikasi (`flutter run` atau `flutter build`), selesai!
+
+### Format Struktur JSON:
+```json
+{
+  "version": 1,
+  "coordinateSystem": {
+    "unit": "meter",
+    "origin": "top-left",
+    "yAxis": "down"
+  },
+  "floors": [
+    {
+      "id": "L1",
+      "name": "Lantai 1",
+      "width": 40,
+      "length": 25,
+      "northOffset": 0,
+      "nodes": [
+        { "id": "n1", "name": "pintu masuk teras", "type": "entrance", "x": 23.0, "y": 24.5 }
+      ],
+      "edges": [
+        { "id": "e1", "from": "n1", "to": "n2", "distance": 0.5 }
+      ]
+    }
+  ]
+}
+```
+
+### Karakteristik & Aturan Denah:
+- **Sumbu Koordinat:** Sumbu X ke kanan, sumbu Y mengarah ke bawah (`top-left` origin). Jarak dalam meter. Bobot edge menggunakan field `distance` dari JSON (bila null, dihitung jarak Euclidean).
+- **Tipe Node:**
+  - `room`: Ruangan yang dapat dijadikan tujuan.
+  - `toilet`: Toilet (tersedia fitur pintasan "Cari Toilet Terdekat").
+  - `entrance`: Pintu / akses masuk (termasuk pintu ruangan, bukan hanya gerbang gedung).
+  - `slot`: Slot parkir kendaraan (fitur cari slot kosong aktif otomatis jika tipe slot tersedia).
+  - `stairs` / `elevator`: Tangga / Lift penghubung lantai.
+  - `junction`: Titik persimpangan lorong berkendara/berjalan (otomatis disaring dan TIDAK muncul sebagai tujuan navigasi pengguna).
+- **Multi-Lantai:**
+  - Jika JSON memiliki lebih dari 1 lantai, aplikasi secara otomatis menampilkan dropdown pemilih lantai di AppBar.
+  - Jika tidak ada edge penghubung antar lantai bertipe `stairs` atau `elevator`, rute A* dibatasi per lantai yang sedang aktif.
+- **Validasi Otomatis Integritas Graf:**
+  - ID node unik secara lokal per lantai dan global.
+  - Setiap edge wajib menunjuk node `from` dan `to` yang terdaftar.
+  - Koordinat numerik valid (tidak NaN / infinite).
+  - Graf per lantai harus tersambung penuh (*connected graph* tanpa node terisolasi).
+  - Jika validasi gagal, aplikasi menampilkan layar error informatif yang jelas dengan tombol *Coba Lagi* (tanpa membuat aplikasi crash).
+- **Kode QR Kalibrasi AR:**
+  - Format isi QR: ID node langsung (misal `"n5"`) atau JSON `{"node":"n5","heading":90}`.
+  - Posisi awal pengguna dikalibrasi ke koordinat node tersebut.
+
 ### Keterbatasan
 - Ini adalah **pseudo-AR berbasis sensor** (kompas + accelerometer), bukan SLAM (*Simultaneous Localization and Mapping*) atau visual odometry.
 - Akurasi estimasi posisi menurun seiring jarak berjalan akibat akumulasi kesalahan (*drift*), dan sensor kompas magnetik dapat mengalami interferensi logam/struktur beton bertulang di dalam basement parkir.

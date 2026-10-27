@@ -44,6 +44,24 @@ void main() {
       // Saat HP menghadap Selatan (180 kompas), heading denah = 90 (menghadap +Y)
       expect(ARProjector.compassToMapHeading(180, 90), equals(90.0));
     });
+
+    test('calculateRelativeAngleDeg normalizes relative angle to [-180, 180]', () {
+      expect(ARProjector.calculateRelativeAngleDeg(90, 0), equals(90.0));
+      expect(ARProjector.calculateRelativeAngleDeg(0, 90), equals(-90.0));
+      expect(ARProjector.calculateRelativeAngleDeg(350, 10), equals(-20.0));
+      expect(ARProjector.calculateRelativeAngleDeg(10, 350), equals(20.0));
+      expect(ARProjector.calculateRelativeAngleDeg(180, 0).abs(), equals(180.0));
+    });
+
+    test('lerpAngleDeg smoothly interpolates along the shortest angular distance', () {
+      // 0 to 90 at 50% -> 45
+      expect(ARProjector.lerpAngleDeg(0, 90, 0.5), closeTo(45.0, 0.001));
+      // Cross 180 boundary: 170 to -170 (-170 is 190 deg, diff is +20 deg)
+      // at 50% -> 170 + 10 = 180 (or -180)
+      expect(ARProjector.lerpAngleDeg(170, -170, 0.5).abs(), closeTo(180.0, 0.001));
+      // -170 to 170 -> shortest diff is -20 deg, at 50% -> -180
+      expect(ARProjector.lerpAngleDeg(-170, 170, 0.5).abs(), closeTo(180.0, 0.001));
+    });
   });
 
   group('ARProjector 3D Perspective Projection Tests', () {
@@ -228,6 +246,121 @@ void main() {
       expect(points.length, greaterThanOrEqualTo(5));
       expect(points.first, equals(const Offset(0, 0)));
       expect(points.last.dx, closeTo(5.0, 1.0));
+    });
+
+    test('interpolateRoutePoints with minDistance skips close points and respects maxPoints', () {
+      final waypoints = [
+        const Offset(0, 0),
+        const Offset(10, 0),
+      ];
+
+      final points = ARProjector.interpolateRoutePoints(
+        waypoints,
+        spacing: 1.0,
+        minDistance: 1.8,
+        maxPoints: 6,
+        maxDistance: 15.0,
+      );
+
+      // Titik pertama harus berjarak >= 1.5 m (di 1.8 m)
+      expect(points.first.dx, closeTo(1.8, 0.01));
+      // Semua titik harus >= 1.5 m dari awal
+      for (final pt in points) {
+        expect(pt.dx, greaterThanOrEqualTo(1.5));
+      }
+      // Dibatasi maksimal 6 titik
+      expect(points.length, equals(6));
+      expect(points.last.dx, closeTo(6.8, 0.01));
+    });
+  });
+
+  group('Heading Offset Calibration Tests', () {
+    const projector = ARProjector(
+      cameraHeight: 1.4,
+      fovHorizontalDeg: 60.0,
+      maxProjectionDistance: 20.0,
+    );
+    const screenSize = Size(400, 800);
+
+    test('facing reference node aligns projection directly forward and straight', () {
+      // Skenario 1: Titik awal di (10, 10), titik acuan di (20, 10) (sepanjang sumbu +X, bearing = 0°)
+      const startPoint = Offset(10.0, 10.0);
+      const refPoint = Offset(20.0, 10.0);
+
+      final bearingMap = ARProjector.calculateBearingDeg(startPoint, refPoint);
+      expect(bearingMap, equals(0.0));
+
+      // Pengguna mengarahkan HP lurus ke titik acuan fisik di depannya,
+      // dan kompas ponsel membaca 65° (Utara magnetik serong)
+      const compassReading = 65.0;
+
+      // Hitung heading offset kalibrasi:
+      // headingOffset = normalizeAngleDeg(compass - bearingMap)
+      final headingOffset = ARProjector.normalizeAngleDeg(compassReading - bearingMap);
+      expect(headingOffset, equals(65.0));
+
+      // Hitung arah hadap denah efektif:
+      // effectiveMapHeading = normalizeAngleDeg(compass - headingOffset)
+      final effectiveMapHeading = ARProjector.compassToMapHeading(compassReading, headingOffset);
+      expect(effectiveMapHeading, equals(0.0));
+
+      // Proyeksikan titik acuan ke layar kamera ponsel
+      final projected = projector.projectPoint(
+        point: refPoint,
+        userPosition: startPoint,
+        mapHeadingDeg: effectiveMapHeading,
+        pitchDeg: 20.0,
+        screenSize: screenSize,
+      );
+
+      // Verifikasi: titik acuan harus berada tepat di tengah horizontal layar (x = 200)
+      expect(projected, isNotNull);
+      expect(projected!.screenPosition.dx, closeTo(screenSize.width / 2.0, 0.5));
+      expect(projected.isVisibleOnScreen, isTrue);
+
+      // Verifikasi panduan arah belok: harus lurus ke depan (straight), bukan belok kanan/kiri
+      final guidance = ARProjector.getOffScreenGuidance(
+        userPos: startPoint,
+        userHeadingDeg: effectiveMapHeading,
+        targetPoint: refPoint,
+      );
+      expect(guidance.direction, equals(TurnDirection.straight));
+    });
+
+    test('calibration with angled reference node (+Y down) aligns correctly', () {
+      // Skenario 2: Titik awal (10, 10), titik acuan (10, 20) (sepanjang sumbu +Y ke bawah, bearing = 90°)
+      const startPoint = Offset(10.0, 10.0);
+      const refPoint = Offset(10.0, 20.0);
+
+      final bearingMap = ARProjector.calculateBearingDeg(startPoint, refPoint);
+      expect(bearingMap, equals(90.0));
+
+      // HP diarahkan lurus ke refPoint, kompas membaca 120°
+      const compassReading = 120.0;
+
+      final headingOffset = ARProjector.normalizeAngleDeg(compassReading - bearingMap);
+      expect(headingOffset, equals(30.0));
+
+      final effectiveMapHeading = ARProjector.compassToMapHeading(compassReading, headingOffset);
+      expect(effectiveMapHeading, equals(90.0));
+
+      final projected = projector.projectPoint(
+        point: refPoint,
+        userPosition: startPoint,
+        mapHeadingDeg: effectiveMapHeading,
+        pitchDeg: 20.0,
+        screenSize: screenSize,
+      );
+
+      expect(projected, isNotNull);
+      expect(projected!.screenPosition.dx, closeTo(screenSize.width / 2.0, 0.5));
+
+      final guidance = ARProjector.getOffScreenGuidance(
+        userPos: startPoint,
+        userHeadingDeg: effectiveMapHeading,
+        targetPoint: refPoint,
+      );
+      expect(guidance.direction, equals(TurnDirection.straight));
     });
   });
 }

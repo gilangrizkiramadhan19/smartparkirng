@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "coordinateSystem": {
+    "unit": "meter",
+    "origin": "top-left",
+    "yAxis": "down"
+  },
+  "floors": [
+    {
+      "id": "L1",
+      "name": "Lantai 1",
+      "width": 40,
+      "length": 25,
+      "northOffset": 0,
+      "nodes": [
+        {
+          "id": "n1",
+          "name": "pintu masuk teras",
+          "type": "entrance",
+          "x": 24,
+          "y": 23
+        },
+        {
+          "id": "n2",
+          "name": "pintu masuk rumah",
+          "type": "entrance",
+          "x": 24,
+          "y": 22
+        },
+        {
+          "id": "n3",
+          "name": "Teras",
+          "type": "junction",
+          "x": 22.354,
+          "y": 21.354
+        },
+        {
+          "id": "n4",
+          "name": "Ruang tamu",
+          "type": "room",
+          "x": 24,
+          "y": 19.89
+        },
+        {
+          "id": "n5",
+          "name": "persimpangan dapur dan ruang kerja tengah",
+          "type": "junction",
+          "x": 24,
+          "y": 18
+        },
+        {
+          "id": "n6",
+          "name": "Dapur",
+          "type": "room",
+          "x": 24.5,
+          "y": 15.5
+        },
+        {
+          "id": "n7",
+          "name": "persimpangan kamar mandi",
+          "type": "junction",
+          "x": 25,
+          "y": 15
+        },
+        {
+          "id": "n8",
+          "name": "pintu masuk kamar mandi",
+          "type": "entrance",
+          "x": 25.5,
+          "y": 14
+        },
+        {
+          "id": "n9",
+          "name": "kamar mandi",
+          "type": "room",
+          "x": 25.5,
+          "y": 13
+        },
+        {
+          "id": "n10",
+          "name": "persimpangan dapur dan ruang kerja tengah",
+          "type": "junction",
+          "x": 23.5,
+          "y": 18
+        },
+        {
+          "id": "n11",
+          "name": "ruang tengah",
+          "type": "room",
+          "x": 22.5,
+          "y": 15.5
+        },
+        {
+          "id": "n12",
+          "name": "persimpangan ruang tengah dan server",
+          "type": "junction",
+          "x": 22.5,
+          "y": 14
+        },
+        {
+          "id": "n13",
+          "name": "pintu masuk ruang server",
+          "type": "entrance",
+          "x": 23.5,
+          "y": 14
+        },
+        {
+          "id": "n14",
+          "name": "ruang server",
+          "type": "room",
+          "x": 24,
+          "y": 14
+        },
+        {
+          "id": "n15",
+          "name": "pintu masuk ruang meeting",
+          "type": "entrance",
+          "x": 21.5,
+          "y": 19
+        },
+        {
+          "id": "n16",
+          "name": "persimpangan ruang kerja tengah dan ruang meeting",
+          "type": "junction",
+          "x": 22.5,
+          "y": 18
+        },
+        {
+          "id": "n17",
+          "name": "ruang meeting",
+          "type": "room",
+          "x": 21.5,
+          "y": 19.5
+        },
+        {
+          "id": "n21",
+          "name": "persimpangan ruang kerja tengah dan ruang meeting",
+          "type": "junction",
+          "x": 21.5,
+          "y": 18
+        },
+        {
+          "id": "n22",
+          "name": "persimpangan kamar mandi",
+          "type": "junction",
+          "x": 25.5,
+          "y": 14.5
+        },
+        {
+          "id": "n23",
+          "name": "persimpangan dapur dan ruang kerja tengah",
+          "type": "junction",
+          "x": 24.5,
+          "y": 17.8
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "from": "n1",
+          "to": "n2",
+          "distance": 1
+        },
+        {
+          "id": "e2",
+          "from": "n2",
+          "to": "n4",
+          "distance": 2.11
+        },
+        {
+          "id": "e3",
+          "from": "n5",
+          "to": "n4",
+          "distance": 1.89
+        },
+        {
+          "id": "e5",
+          "from": "n1",
+          "to": "n3",
+          "distance": 2.328
+        },
+        {
+          "id": "e6",
+          "from": "n6",
+          "to": "n7",
+          "distance": 0.707
+        },
+        {
+          "id": "e8",
+          "from": "n9",
+          "to": "n8",
+          "distance": 1
+        },
+        {
+          "id": "e9",
+          "from": "n12",
+          "to": "n11",
+          "distance": 1.5
+        },
+        {
+          "id": "e11",
+          "from": "n10",
+          "to": "n5",
+          "distance": 0.5
+        },
+        {
+          "id": "e12",
+          "from": "n12",
+          "to": "n13",
+          "distance": 1
+        },
+        {
+          "id": "e13",
+          "from": "n14",
+          "to": "n13",
+          "distance": 0.5
+        },
+        {
+          "id": "e15",
+          "from": "n10",
+          "to": "n16",
+          "distance": 1
+        },
+        {
+          "id": "e18",
+          "from": "n15",
+          "to": "n17",
+          "distance": 0.5
+        },
+        {
+          "id": "e19",
+          "from": "n16",
+          "to": "n21",
+          "distance": 1
+        },
+        {
+          "id": "e20",
+          "from": "n15",
+          "to": "n21",
+          "distance": 1
+        },
+        {
+          "id": "e21",
+          "from": "n21",
+          "to": "n11",
+          "distance": 2.693
+        },
+        {
+          "id": "e22",
+          "from": "n7",
+          "to": "n22",
+          "distance": 0.707
+        },
+        {
+          "id": "e23",
+          "from": "n22",
+          "to": "n8",
+          "distance": 0.5
+        },
+        {
+          "id": "e24",
+          "from": "n11",
+          "to": "n10",
+          "distance": 2.693
+        },
+        {
+          "id": "e25",
+          "from": "n5",
+          "to": "n23",
+          "distance": 0.539
+        },
+        {
+          "id": "e26",
+          "from": "n6",
+          "to": "n23",
+          "distance": 2.3
+        }
+      ]
+    }
+  ]
+} 

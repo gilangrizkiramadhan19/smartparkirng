@@ -107,6 +107,50 @@ html, body {
   transition: all .15s; white-space: nowrap;
 }
 .top-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.top-btn.danger:hover { border-color: var(--red); color: var(--red); }
+.top-btn.linked { border-color: var(--green); color: var(--green); }
+
+/* Project picker */
+#project-select-wrap {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 5px; padding: 2px 8px 2px 10px;
+  min-width: 160px;
+}
+#project-select-wrap select {
+  background: transparent; border: none; color: var(--text-primary);
+  font-family: var(--font); font-size: 11px; outline: none; cursor: pointer; width: 140px;
+}
+
+/* Save indicator */
+#save-indicator {
+  font-size: 10px; white-space: nowrap; padding: 3px 8px;
+  border-radius: 4px; border: 1px solid transparent;
+  transition: all .3s; min-width: 130px; text-align: right;
+}
+#save-indicator.saving { color: var(--yellow); border-color: var(--yellow); }
+#save-indicator.saved  { color: var(--text-dim); border-color: transparent; }
+#save-indicator.error  { color: var(--red); border-color: var(--red); }
+
+/* File link indicator */
+#file-link-badge {
+  font-size: 10px; color: var(--green); border: 1px solid var(--green);
+  border-radius: 4px; padding: 2px 6px; white-space: nowrap; cursor: pointer;
+  display: none;
+}
+#file-link-badge:hover { background: rgba(0,230,118,.08); }
+
+/* Project Manager modal list */
+.proj-list-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--bg-surface); margin-bottom: 4px; cursor: pointer;
+  transition: all .15s;
+}
+.proj-list-item:hover { background: var(--bg-hover); }
+.proj-list-item.active { border-color: var(--cyan); background: var(--cyan-glow); }
+.proj-list-item .proj-name { flex:1; font-size: 12px; }
+.proj-list-item .proj-date { font-size: 10px; color: var(--text-dim); }
 
 /* =============================================
    SIDEBAR
@@ -174,8 +218,82 @@ html, body {
 }
 .field-row input:focus { border-color: var(--cyan); outline: none; }
 
+.dark-select {
+  width: 100%; padding: 4px 6px;
+  background: var(--bg-base); border: 1px solid var(--border);
+  border-radius: 4px; color: var(--text-primary);
+  font-family: var(--font); font-size: 11px;
+}
+.dark-select:focus { border-color: var(--cyan); outline: none; }
+
 .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; color: var(--text-secondary); }
-.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-dot {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 6px; font-weight: bold;
+}
+
+.sidebar-node-list {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 2px;
+}
+.node-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 11px;
+  transition: all .15s;
+}
+.node-list-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.node-list-item.active {
+  background: var(--cyan-glow);
+  border-color: var(--cyan);
+}
+.node-list-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6px;
+  font-weight: bold;
+}
+.node-list-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.node-list-item.active .node-list-name {
+  color: var(--cyan);
+  font-weight: 600;
+}
+.node-list-id {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.node-list-empty {
+  padding: 10px 4px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11px;
+}
 
 .stat-item { display: flex; justify-content: space-between; margin-bottom: 3px; font-size: 11px; }
 .stat-label { color: var(--text-dim); }
@@ -379,12 +497,23 @@ input[type=range]::-webkit-slider-thumb {
   <!-- TOP BAR -->
   <header id="topbar">
     <div class="logo">&#x2B21; Indoor AR Map Editor</div>
+    <!-- Project picker -->
+    <div id="project-select-wrap" title="Pilih proyek aktif">
+      <span style="color:var(--text-dim);font-size:10px">&#x1F4C1;</span>
+      <select id="project-select"></select>
+    </div>
+    <button class="top-btn" id="btn-proj-new" title="Proyek baru">+ Proyek</button>
+    <button class="top-btn" id="btn-proj-manage" title="Kelola proyek">&#9881; Kelola</button>
+    <div id="file-link-badge" id="file-link-badge" title="Terhubung ke file — klik untuk putuskan"></div>
+    <button class="top-btn" id="btn-link-file" title="Hubungkan / buka file .json">&#x1F517; File...</button>
     <div class="sep"></div>
+    <div id="save-indicator" class="saved">&#x2713; Siap</div>
     <button class="top-btn" id="btn-undo">&#x21A9; Undo</button>
     <button class="top-btn" id="btn-redo">&#x21AA; Redo</button>
     <button class="top-btn" id="btn-template-empty">&#x1F4C4; Template Kosong</button>
     <button class="top-btn" id="btn-template-sample">&#x1F3E2; Contoh Denah</button>
     <button class="top-btn" id="btn-fit">&#x229F; Fit View</button>
+    <button class="top-btn" id="btn-recalc-distances" title="Hitung ulang semua distance dari koordinat">&#x1F4CF; Rapikan Jarak</button>
   </header>
 
   <!-- SIDEBAR -->
@@ -394,6 +523,10 @@ input[type=range]::-webkit-slider-thumb {
       <button class="tool-btn active" data-tool="add-node">
         <span class="t-icon">&#x2295;</span> Tambah Node <span class="t-key">1</span>
       </button>
+      <div class="field-row" style="margin:2px 0 6px">
+        <label>Tipe Node Baru</label>
+        <select id="new-node-type" class="dark-select"></select>
+      </div>
       <button class="tool-btn" data-tool="connect">
         <span class="t-icon">&#x27F6;</span> Hubung Jalur <span class="t-key">2</span>
       </button>
@@ -461,11 +594,20 @@ input[type=range]::-webkit-slider-thumb {
 
     <div class="sidebar-section">
       <div class="sidebar-section-title">Legenda</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#00e676"></div>Entrance</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#00e5ff"></div>Junction</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#bb86fc"></div>Room</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#ffd740"></div>Slot (Parkir)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#ff9800"></div>Tangga / Lift</div>
+      <div id="legend-list"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Daftar Node</span>
+        <span id="node-list-count" style="font-size:10px;color:var(--text-dim);font-weight:400">0</span>
+      </div>
+      <div class="field-row" style="margin-bottom:6px">
+        <select id="node-list-filter" class="dark-select">
+          <option value="all">Semua Tipe</option>
+        </select>
+      </div>
+      <div id="sidebar-node-list" class="sidebar-node-list"></div>
     </div>
 
     <div class="sidebar-section">
@@ -489,6 +631,29 @@ input[type=range]::-webkit-slider-thumb {
       <div class="status-seg"><span class="val">Scroll: zoom &middot; Kanan/Spasi+drag: geser &middot; Del: hapus terpilih</span></div>
     </div>
     <div id="conn-hint">Klik node B untuk membuat jalur</div>
+    <!-- Floating Edge Distance Input Popover -->
+    <div id="floating-edge-popover" style="display:none;position:absolute;z-index:90;background:var(--bg-panel);border:1px solid var(--cyan);border-radius:6px;padding:8px 12px;box-shadow:0 6px 20px rgba(0,0,0,0.7);font-size:11px;min-width:190px">
+      <div style="font-weight:700;color:var(--cyan);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+        <span>Atur Jarak Jalur</span>
+        <span id="float-edge-id" style="font-size:10px;color:var(--text-dim);font-family:var(--mono)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <label for="float-dist-input" style="color:var(--text-secondary);font-size:11px">Jarak (m):</label>
+        <input type="number" id="float-dist-input" step="0.1" min="0.1" style="width:80px;padding:4px 6px;background:var(--bg-base);border:1px solid var(--border);border-radius:4px;color:var(--cyan);font-family:var(--mono);font-size:12px;font-weight:600">
+      </div>
+      <div id="float-branch-wrap" style="margin-bottom:6px">
+        <label class="check-row" style="cursor:pointer;font-size:10.5px">
+          <input type="checkbox" id="float-move-branches" checked>
+          <span>Geser juga cabang di belakangnya</span>
+        </label>
+        <div id="float-loop-warn" style="display:none;font-size:9.5px;color:var(--amber);margin-top:2px;line-height:1.2">
+          &#x26A0; Edge dalam loop; cabang tidak digeser.
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:4px">
+        [Enter] Terapkan &middot; [Esc] Batal
+      </div>
+    </div>
   </main>
 
   <!-- INSPECTOR -->
@@ -507,6 +672,7 @@ input[type=range]::-webkit-slider-thumb {
         <span style="font-size:12px;font-weight:700">NODE</span>
         <span class="insp-badge" id="node-type-badge">&#8211;</span>
       </div>
+      <div id="node-unknown-warn" style="display:none;background:rgba(255,152,0,0.12);border:1px solid rgba(255,152,0,0.4);border-radius:4px;padding:6px 8px;font-size:11px;color:var(--orange);margin-bottom:8px"></div>
       <div class="insp-field">
         <label>ID (read-only)</label>
         <input type="text" id="node-id-input" readonly style="color:var(--text-dim)">
@@ -546,7 +712,19 @@ input[type=range]::-webkit-slider-thumb {
       <div class="insp-field"><label>ID</label><input type="text" id="edge-id-input" readonly style="color:var(--text-dim)"></div>
       <div class="insp-field"><label>Dari Node</label><input type="text" id="edge-from-input" readonly style="color:var(--text-dim)"></div>
       <div class="insp-field"><label>Ke Node</label><input type="text" id="edge-to-input" readonly style="color:var(--text-dim)"></div>
-      <div class="insp-field"><label>Jarak (meter)</label><input type="text" id="edge-dist-input" readonly style="color:var(--cyan);font-family:var(--mono)"></div>
+      <div class="insp-field">
+        <label>Jarak (m)</label>
+        <input type="number" id="edge-dist-input" step="0.1" min="0.1" style="color:var(--cyan);font-family:var(--mono);font-weight:600">
+      </div>
+      <div class="insp-field" style="margin-top:6px">
+        <label class="check-row" style="cursor:pointer;font-size:11px">
+          <input type="checkbox" id="edge-move-branches" checked>
+          <span>Geser juga cabang di belakangnya</span>
+        </label>
+        <div id="edge-loop-warn" style="display:none;font-size:10px;color:var(--amber);margin-top:4px;line-height:1.3">
+          &#x26A0; Jalur membentuk lingkaran (loop) ke node asal. Pergeseran cabang dinonaktifkan.
+        </div>
+      </div>
       <div class="insp-divider"></div>
       <div class="insp-actions">
         <button class="insp-btn danger" id="btn-delete-edge">&#x1F5D1; Hapus Jalur Ini</button>
@@ -634,25 +812,137 @@ input[type=range]::-webkit-slider-thumb {
   </div>
 </div>
 
+<!-- PROJECT MANAGER MODAL -->
+<div class="modal-overlay" id="proj-manage-modal">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-title">&#x1F4C1; Kelola Proyek</div>
+    <div id="proj-list" style="max-height:280px;overflow-y:auto;margin-bottom:12px"></div>
+    <div class="modal-actions" style="justify-content:flex-start;flex-wrap:wrap;gap:6px">
+      <button class="modal-btn primary" id="btn-proj-rename">&#x270F; Ganti Nama</button>
+      <button class="modal-btn" id="btn-proj-duplicate">&#x2398; Duplikat</button>
+      <button class="modal-btn danger" id="btn-proj-delete">&#x1F5D1; Hapus</button>
+      <div style="flex:1"></div>
+      <button class="modal-btn" id="btn-proj-manage-close">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- RENAME MODAL -->
+<div class="modal-overlay" id="proj-rename-modal">
+  <div class="modal-box">
+    <div class="modal-title">Ganti Nama Proyek</div>
+    <div class="insp-field" style="margin-bottom:12px">
+      <label>Nama Baru</label>
+      <input type="text" id="proj-rename-input" style="width:100%;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:var(--font);font-size:13px">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" id="btn-proj-rename-cancel">Batal</button>
+      <button class="modal-btn primary" id="btn-proj-rename-ok">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW PROJECT MODAL -->
+<div class="modal-overlay" id="proj-new-modal">
+  <div class="modal-box">
+    <div class="modal-title">+ Proyek Baru</div>
+    <div class="insp-field" style="margin-bottom:12px">
+      <label>Nama Proyek</label>
+      <input type="text" id="proj-new-name" value="Peta Baru" style="width:100%;padding:6px 8px;background:var(--bg-base);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-family:var(--font);font-size:13px">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" id="btn-proj-new-cancel">Batal</button>
+      <button class="modal-btn primary" id="btn-proj-new-ok">Buat</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <script>
 'use strict';
 
 /* =============================================
-   KONSTANTA TIPE NODE
+   KONSTANTA TIPE NODE (TERPUSAT)
+   Untuk menambah tipe baru (mis. pantry, musholla),
+   cukup tambahkan satu baris objek di array NODE_TYPES ini.
    ============================================= */
-const NODE_TYPES = {
-  entrance: { label: 'Entrance',  color: '#00e676', stroke: '#00a849', radius: 10 },
-  junction: { label: 'Junction',  color: '#00e5ff', stroke: '#009ab5', radius: 8  },
-  room:     { label: 'Room',      color: '#bb86fc', stroke: '#7c4dbb', radius: 9  },
-  slot:     { label: 'Slot',      color: '#ffd740', stroke: '#b59700', radius: 8  },
-  stairs:   { label: 'Tangga',    color: '#ff9800', stroke: '#c56200', radius: 9  },
-  elevator: { label: 'Lift',      color: '#ff9800', stroke: '#c56200', radius: 9  },
-};
+const NODE_TYPES = [
+  { id: 'entrance', label: 'Entrance',  color: '#00e676', stroke: '#00a849', radius: 10, defaultPrefix: 'Pintu Masuk', icon: '' },
+  { id: 'junction', label: 'Junction',  color: '#00e5ff', stroke: '#009ab5', radius: 8,  defaultPrefix: 'Junction',    icon: '' },
+  { id: 'room',     label: 'Room',      color: '#bb86fc', stroke: '#7c4dbb', radius: 9,  defaultPrefix: 'Ruangan',     icon: '' },
+  { id: 'slot',     label: 'Slot',      color: '#ffd740', stroke: '#b59700', radius: 8,  defaultPrefix: 'Slot',        icon: '' },
+  { id: 'stairs',   label: 'Tangga',    color: '#ff9800', stroke: '#c56200', radius: 9,  defaultPrefix: 'Tangga',      icon: '▲', connectsFloor: true },
+  { id: 'elevator', label: 'Lift',      color: '#ff9800', stroke: '#c56200', radius: 9,  defaultPrefix: 'Lift',        icon: 'E', connectsFloor: true },
+  { id: 'toilet',   label: 'Toilet',    color: '#ff5722', stroke: '#d84315', radius: 9,  defaultPrefix: 'Toilet',      icon: 'WC' },
+];
 
-const AUTOSAVE_KEY = 'indoor_ar_map_editor_v1';
-const VERSION = 1;
+// Map lookup untuk backward compatibility (NODE_TYPES[id])
+NODE_TYPES.forEach(t => { NODE_TYPES[t.id] = t; });
+
+function getNodeType(typeId) {
+  const found = NODE_TYPES.find(t => t.id === typeId);
+  if (found) {
+    return {
+      id: found.id,
+      label: found.label,
+      color: found.color,
+      stroke: found.stroke || found.color,
+      radius: found.radius || 9,
+      defaultPrefix: found.defaultPrefix || found.label || 'Node',
+      icon: found.icon || '',
+      connectsFloor: !!found.connectsFloor,
+      isUnknown: false,
+    };
+  }
+  // Unknown type fallback: nilai asli dipertahankan, tampil sebagai unknown
+  return {
+    id: typeId,
+    label: `${typeId || 'unknown'} (unknown)`,
+    color: '#78909c',
+    stroke: '#546e7a',
+    radius: 8,
+    defaultPrefix: typeId || 'Node',
+    icon: '?',
+    connectsFloor: false,
+    isUnknown: true,
+  };
+}
+
+/* =============================================
+   PENOMORAN PER TIPE PER LANTAI (TIDAK DIPAKAI ULANG)
+   ============================================= */
+function ensureFloorTypeCounters(floor, typeId) {
+  if (!floor) return;
+  if (!floor.typeCounters) floor.typeCounters = {};
+  const tp = getNodeType(typeId);
+  const prefix = tp.defaultPrefix || tp.label || typeId;
+  const regex = new RegExp(`^${prefix}\\s+(\\d+)$`, 'i');
+  let maxFound = floor.typeCounters[typeId] || 0;
+  (floor.nodes || []).forEach(n => {
+    if (n.type === typeId && n.name) {
+      const m = n.name.match(regex);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (num > maxFound) maxFound = num;
+      }
+    }
+  });
+  floor.typeCounters[typeId] = maxFound;
+}
+
+function getNextTypeName(floor, typeId) {
+  if (!floor) return '';
+  if (!floor.typeCounters) floor.typeCounters = {};
+  ensureFloorTypeCounters(floor, typeId);
+  const nextNum = (floor.typeCounters[typeId] || 0) + 1;
+  floor.typeCounters[typeId] = nextNum;
+  const tp = getNodeType(typeId);
+  const prefix = tp.defaultPrefix || tp.label || 'Node';
+  return `${prefix} ${nextNum}`;
+}
+
+const VERSION = 1; // format JSON ekspor
 
 /* =============================================
    STATE GLOBAL
@@ -775,6 +1065,284 @@ function recalcEdges(nodeId) {
       if (a && b) e.distance = +euclidDist(a, b).toFixed(3);
     }
   });
+}
+
+function edgeIsInLoop(edge, floor) {
+  const adj = {};
+  floor.nodes.forEach(n => adj[n.id] = []);
+  floor.edges.forEach(ed => {
+    if (ed.id !== edge.id) {
+      adj[ed.from]?.push(ed.to);
+      adj[ed.to]?.push(ed.from);
+    }
+  });
+  const visited = new Set();
+  const queue = [edge.to];
+  visited.add(edge.to);
+  while (queue.length > 0) {
+    const curr = queue.shift();
+    if (curr === edge.from) return true;
+    for (const nb of (adj[curr] || [])) {
+      if (!visited.has(nb)) {
+        visited.add(nb);
+        queue.push(nb);
+      }
+    }
+  }
+  return false;
+}
+
+function getBranchNodes(edge, floor) {
+  const adj = {};
+  floor.nodes.forEach(n => adj[n.id] = []);
+  floor.edges.forEach(ed => {
+    if (ed.id !== edge.id) {
+      adj[ed.from]?.push(ed.to);
+      adj[ed.to]?.push(ed.from);
+    }
+  });
+  const branchNodes = [];
+  const visited = new Set();
+  const queue = [edge.to];
+  visited.add(edge.to);
+  visited.add(edge.from); // Do not pass through from
+  const nodeMap = {};
+  floor.nodes.forEach(n => nodeMap[n.id] = n);
+
+  while (queue.length > 0) {
+    const currId = queue.shift();
+    if (nodeMap[currId]) branchNodes.push(nodeMap[currId]);
+    for (const nb of (adj[currId] || [])) {
+      if (!visited.has(nb)) {
+        visited.add(nb);
+        queue.push(nb);
+      }
+    }
+  }
+  return branchNodes;
+}
+
+function applyEdgeDistance(edgeId, targetDist, moveBranches) {
+  const floor = currentFloor();
+  if (!floor) return false;
+  const edge = floor.edges.find(e => e.id === edgeId);
+  if (!edge) return false;
+
+  const nodeMap = {};
+  floor.nodes.forEach(n => nodeMap[n.id] = n);
+  const nFrom = nodeMap[edge.from];
+  const nTo = nodeMap[edge.to];
+  if (!nFrom || !nTo) return false;
+
+  targetDist = parseFloat(targetDist);
+  if (isNaN(targetDist) || targetDist < 0.1) {
+    toast('Jarak harus berupa angka minimal 0.1 meter', 'error');
+    return false;
+  }
+
+  // Direction vector from nFrom to nTo
+  let dx = nTo.x - nFrom.x;
+  let dy = nTo.y - nFrom.y;
+  let curDist = Math.sqrt(dx * dx + dy * dy);
+
+  let ux = 1.0, uy = 0.0;
+  if (curDist > 1e-6) {
+    ux = dx / curDist;
+    uy = dy / curDist;
+  }
+
+  // If edge is in a loop, force moveBranches = false
+  const inLoop = edgeIsInLoop(edge, floor);
+  if (inLoop) moveBranches = false;
+
+  // New position for nTo
+  let newToX = +(nFrom.x + ux * targetDist).toFixed(3);
+  let newToY = +(nFrom.y + uy * targetDist).toFixed(3);
+
+  // Snap grid alignment if on axis-aligned line and close to grid
+  const snappedX = +snap(newToX).toFixed(3);
+  const snappedY = +snap(newToY).toFixed(3);
+  if (Math.abs(uy) < 1e-4 && Math.abs(Math.abs(snappedX - nFrom.x) - targetDist) < 1e-4) {
+    newToX = snappedX;
+  }
+  if (Math.abs(ux) < 1e-4 && Math.abs(Math.abs(snappedY - nFrom.y) - targetDist) < 1e-4) {
+    newToY = snappedY;
+  }
+
+  const deltaX = +(newToX - nTo.x).toFixed(3);
+  const deltaY = +(newToY - nTo.y).toFixed(3);
+
+  // Determine all nodes to move
+  const nodesToMove = moveBranches ? getBranchNodes(edge, floor) : [nTo];
+
+  // Boundary check for all nodes that will move
+  for (const node of nodesToMove) {
+    const projX = +(node.x + deltaX).toFixed(3);
+    const projY = +(node.y + deltaY).toFixed(3);
+    if (projX < 0 || projX > floor.width || projY < 0 || projY > floor.length) {
+      toast('Pergeseran dibatalkan: node "' + (node.name || node.id) + '" akan keluar batas lantai (' + floor.width + 'x' + floor.length + 'm)', 'error');
+      return false;
+    }
+  }
+
+  // Save Undo before applying changes
+  saveUndo();
+
+  // Apply shift
+  nodesToMove.forEach(node => {
+    node.x = +(node.x + deltaX).toFixed(3);
+    node.y = +(node.y + deltaY).toFixed(3);
+  });
+
+  // Recalculate distance for all affected edges
+  const movedNodeIds = new Set(nodesToMove.map(n => n.id));
+  floor.edges.forEach(e => {
+    if (movedNodeIds.has(e.from) || movedNodeIds.has(e.to)) {
+      const a = nodeMap[e.from], b = nodeMap[e.to];
+      if (a && b) {
+        e.distance = +euclidDist(a, b).toFixed(3);
+      }
+    }
+  });
+
+  updateInspector();
+  updateStats();
+  updateSidebarNodeList();
+  renderCanvas();
+  autosave();
+  toast('Jarak diatur ke ' + edge.distance.toFixed(2) + ' m' + (nodesToMove.length > 1 ? ' (' + nodesToMove.length + ' node digeser)' : ''), 'success');
+  return true;
+}
+
+function doRecalcAllDistances() {
+  let changedCount = 0;
+  const snapshot = cloneState();
+
+  state.floors.forEach(floor => {
+    const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+    floor.edges.forEach(e => {
+      const a = nm[e.from], b = nm[e.to];
+      if (a && b) {
+        const correct = +euclidDist(a, b).toFixed(3);
+        if (Math.abs((e.distance || 0) - correct) > 0.001) {
+          e.distance = correct;
+          changedCount++;
+        }
+      }
+    });
+  });
+
+  if (changedCount > 0) {
+    state.undoStack.push(snapshot);
+    if (state.undoStack.length > 80) state.undoStack.shift();
+    state.redoStack = [];
+    updateInspector();
+    updateStats();
+    renderCanvas();
+    autosave();
+    toast('Rapikan jarak: ' + changedCount + ' jalur disesuaikan dengan koordinat', 'success');
+  } else {
+    toast('Semua jarak jalur sudah rapi dan sesuai koordinat', 'info');
+  }
+}
+
+let activeFloatingEdgeId = null;
+
+function openFloatingEdgeInput(edgeId, screenX, screenY) {
+  const floor = currentFloor();
+  if (!floor) return;
+  const edge = floor.edges.find(e => e.id === edgeId);
+  if (!edge) return;
+
+  activeFloatingEdgeId = edgeId;
+  const popover = document.getElementById('floating-edge-popover');
+  const input = document.getElementById('float-dist-input');
+  const branchCb = document.getElementById('float-move-branches');
+  const loopWarn = document.getElementById('float-loop-warn');
+  const idBadge = document.getElementById('float-edge-id');
+
+  if (idBadge) idBadge.textContent = edge.id;
+  input.value = edge.distance.toFixed(3);
+
+  const isLoop = edgeIsInLoop(edge, floor);
+  if (isLoop) {
+    branchCb.checked = false;
+    branchCb.disabled = true;
+    loopWarn.style.display = 'block';
+  } else {
+    branchCb.disabled = false;
+    const inspCb = document.getElementById('edge-move-branches');
+    branchCb.checked = inspCb ? inspCb.checked : true;
+    loopWarn.style.display = 'none';
+  }
+
+  const p = ppm();
+  const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+  const nA = nm[edge.from], nB = nm[edge.to];
+
+  let px = screenX, py = screenY;
+  if (px === undefined || py === undefined) {
+    if (nA && nB) {
+      px = ((nA.x + nB.x) / 2) * p + state.offsetX;
+      py = ((nA.y + nB.y) / 2) * p + state.offsetY;
+    } else {
+      px = canvas.width / 2;
+      py = canvas.height / 2;
+    }
+  }
+
+  const banner = document.getElementById('mode-banner');
+  const bannerH = banner ? banner.offsetHeight : 0;
+  const wrap = document.getElementById('canvas-wrap');
+  const wrapW = wrap.clientWidth;
+  const wrapH = wrap.clientHeight;
+
+  popover.style.display = 'block';
+  const popW = popover.offsetWidth || 195;
+  const popH = popover.offsetHeight || 115;
+
+  let left = Math.max(10, Math.min(wrapW - popW - 10, px - popW / 2));
+  let top = Math.max(bannerH + 10, Math.min(wrapH - popH - 40, py - popH - 12));
+
+  popover.style.left = left + 'px';
+  popover.style.top = top + 'px';
+
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 50);
+}
+
+function closeFloatingEdgeInput() {
+  const popover = document.getElementById('floating-edge-popover');
+  if (popover) popover.style.display = 'none';
+  activeFloatingEdgeId = null;
+}
+
+function hitEdgeOrLabel(floor, cx, cy) {
+  const p = ppm();
+  const nm = {}; floor.nodes.forEach(n => nm[n.id] = n);
+  for (let i = floor.edges.length - 1; i >= 0; i--) {
+    const e = floor.edges[i];
+    const nA = nm[e.from], nB = nm[e.to];
+    if (!nA || !nB) continue;
+    const ax = nA.x * p + state.offsetX, ay = nA.y * p + state.offsetY;
+    const bx = nB.x * p + state.offsetX, by = nB.y * p + state.offsetY;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+
+    if (Math.abs(cx - mx) <= 35 && cy >= my - 22 && cy <= my + 12) {
+      return e;
+    }
+
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 > 0) {
+      const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / len2));
+      const dist = Math.sqrt((cx - (ax + t * dx)) ** 2 + (cy - (ay + t * dy)) ** 2);
+      if (dist <= 10) return e;
+    }
+  }
+  return null;
 }
 
 /* =============================================
@@ -1155,14 +1723,17 @@ canvas.addEventListener('mousedown', e => {
     canvas.style.cursor='grabbing'; return;
   }
   if (e.button!==0||!floor) return;
+  closeFloatingEdgeInput();
 
   const m = cToM(x,y);
 
   if (state.tool==='add-node') {
     saveUndo();
-    const node = addNode(snap(m.x), snap(m.y));
+    const typeId = document.getElementById('new-node-type').value || 'junction';
+    const autoName = getNextTypeName(floor, typeId);
+    const node = addNode(snap(m.x), snap(m.y), typeId, autoName);
     state.selectedNodeId=node.id; state.selectedEdgeId=null;
-    updateInspector(); updateStats(); renderCanvas(); autosave(); return;
+    updateInspector(); updateStats(); updateSidebarNodeList(); renderCanvas(); autosave(); return;
   }
 
   if (state.tool==='connect') {
@@ -1175,7 +1746,15 @@ canvas.addEventListener('mousedown', e => {
         saveUndo();
         const edge=addEdge(state.connectFromId,hit.id);
         if (!edge) toast('Edge sudah ada atau tidak valid','error');
-        else { toast('Jalur ditambahkan','success'); updateStats(); autosave(); }
+        else {
+          toast('Jalur ditambahkan','success');
+          updateStats();
+          autosave();
+          state.selectedEdgeId = edge.id;
+          state.selectedNodeId = null;
+          updateInspector();
+          openFloatingEdgeInput(edge.id, x, y);
+        }
       }
       state.connectFromId=null;
       document.getElementById('conn-hint').style.display='none';
@@ -1220,8 +1799,23 @@ canvas.addEventListener('wheel', e => {
   state.offsetX += (mAfter.x-mBefore.x)*ppm();
   state.offsetY += (mAfter.y-mBefore.y)*ppm();
   document.getElementById('s-zoom').textContent = Math.round(state.zoom*100);
+  closeFloatingEdgeInput();
   renderCanvas();
 }, {passive:false});
+
+canvas.addEventListener('dblclick', e => {
+  const {x, y} = canvasXY(e);
+  const floor = currentFloor();
+  if (!floor) return;
+  const hitE = hitEdgeOrLabel(floor, x, y);
+  if (hitE) {
+    state.selectedEdgeId = hitE.id;
+    state.selectedNodeId = null;
+    updateInspector();
+    openFloatingEdgeInput(hitE.id, x, y);
+    renderCanvas();
+  }
+});
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -1308,12 +1902,18 @@ function showNodeInspector(n) {
   document.getElementById('node-type-input').value=n.type;
   document.getElementById('node-x-input').value=n.x;
   document.getElementById('node-y-input').value=n.y;
-  const tp=NODE_TYPES[n.type]||NODE_TYPES.junction;
+  const tp=getNodeType(n.type);
   const badge=document.getElementById('node-type-badge');
   badge.textContent=tp.label; badge.style.color=tp.color; badge.style.borderColor=tp.color; badge.style.background=tp.color+'18';
   const ctf=document.getElementById('connects-to-field');
-  ctf.style.display=(n.type==='stairs'||n.type==='elevator')?'block':'none';
+  ctf.style.display=tp.connectsFloor?'block':'none';
   document.getElementById('node-connects-input').value=n.connectsTo||'';
+  // Show unknown warning
+  const unkWarn=document.getElementById('node-unknown-warn');
+  if(tp.isUnknown){
+    unkWarn.style.display='block';
+    unkWarn.textContent='\u26A0 Tipe "'+n.type+'" tidak dikenal. Nilai asli dipertahankan.';
+  } else { unkWarn.style.display='none'; }
 }
 function showEdgeInspector(e,floor) {
   document.getElementById('insp-none').style.display='none';
@@ -1325,7 +1925,19 @@ function showEdgeInspector(e,floor) {
   document.getElementById('edge-id-input').value=e.id;
   document.getElementById('edge-from-input').value=e.from+(nA?' ('+nA.name+')':'');
   document.getElementById('edge-to-input').value=e.to+(nB?' ('+nB.name+')':'');
-  document.getElementById('edge-dist-input').value=e.distance.toFixed(3)+' m';
+  document.getElementById('edge-dist-input').value=e.distance.toFixed(3);
+
+  const isLoop = edgeIsInLoop(e, floor);
+  const branchCb = document.getElementById('edge-move-branches');
+  const loopWarn = document.getElementById('edge-loop-warn');
+  if (isLoop) {
+    branchCb.checked = false;
+    branchCb.disabled = true;
+    loopWarn.style.display = 'block';
+  } else {
+    branchCb.disabled = false;
+    loopWarn.style.display = 'none';
+  }
 }
 function showRouteInspector() {
   document.getElementById('insp-none').style.display='none';
@@ -1346,11 +1958,15 @@ function showRouteInspector() {
     if(!isNaN(nx)) n.x=+nx.toFixed(3);
     if(!isNaN(ny)) n.y=+ny.toFixed(3);
     n.connectsTo=document.getElementById('node-connects-input').value.trim()||undefined;
-    document.getElementById('connects-to-field').style.display=(n.type==='stairs'||n.type==='elevator')?'block':'none';
-    const tp=NODE_TYPES[n.type]||NODE_TYPES.junction;
+    const tp=getNodeType(n.type);
+    document.getElementById('connects-to-field').style.display=tp.connectsFloor?'block':'none';
     const badge=document.getElementById('node-type-badge');
     badge.textContent=tp.label; badge.style.color=tp.color; badge.style.borderColor=tp.color; badge.style.background=tp.color+'18';
+    const unkWarn=document.getElementById('node-unknown-warn');
+    if(tp.isUnknown){unkWarn.style.display='block';unkWarn.textContent='\u26A0 Tipe "'+n.type+'" tidak dikenal.';}
+    else{unkWarn.style.display='none';}
     if(id==='node-x-input'||id==='node-y-input') recalcEdges(n.id);
+    updateSidebarNodeList();
     renderCanvas(); autosave();
   });
 });
@@ -1358,15 +1974,69 @@ function showRouteInspector() {
 function doDeleteNode() {
   if(!state.selectedNodeId) return;
   saveUndo(); removeNode(state.selectedNodeId);
-  updateInspector(); updateStats(); renderCanvas(); autosave(); toast('Node dihapus','info');
+  updateInspector(); updateStats(); updateSidebarNodeList(); renderCanvas(); autosave(); toast('Node dihapus','info');
 }
 function doDeleteEdge() {
   if(!state.selectedEdgeId) return;
   saveUndo(); removeEdge(state.selectedEdgeId);
+  closeFloatingEdgeInput();
   updateInspector(); updateStats(); renderCanvas(); autosave(); toast('Jalur dihapus','info');
 }
 document.getElementById('btn-delete-node').addEventListener('click', doDeleteNode);
 document.getElementById('btn-delete-edge').addEventListener('click', doDeleteEdge);
+
+// Edge distance input in inspector
+const edgeDistInput = document.getElementById('edge-dist-input');
+function commitEdgeInspectorDistance() {
+  const floor = currentFloor();
+  if (!floor || !state.selectedEdgeId) return;
+  const edge = floor.edges.find(ed => ed.id === state.selectedEdgeId);
+  if (!edge) return;
+  const val = parseFloat(edgeDistInput.value);
+  if (isNaN(val) || val <= 0) {
+    edgeDistInput.value = edge.distance.toFixed(3);
+    return;
+  }
+  if (Math.abs(val - edge.distance) < 0.001) return;
+  const moveBr = document.getElementById('edge-move-branches').checked;
+  const ok = applyEdgeDistance(edge.id, val, moveBr);
+  if (!ok) {
+    edgeDistInput.value = edge.distance.toFixed(3);
+  }
+}
+edgeDistInput?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    commitEdgeInspectorDistance();
+    edgeDistInput.blur();
+  } else if (e.key === 'Escape') {
+    const floor = currentFloor();
+    const edge = floor?.edges.find(ed => ed.id === state.selectedEdgeId);
+    if (edge) edgeDistInput.value = edge.distance.toFixed(3);
+    edgeDistInput.blur();
+  }
+});
+edgeDistInput?.addEventListener('blur', () => {
+  commitEdgeInspectorDistance();
+});
+
+// Floating popover events
+const floatDistInput = document.getElementById('float-dist-input');
+floatDistInput?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (activeFloatingEdgeId) {
+      const val = parseFloat(floatDistInput.value);
+      const moveBr = document.getElementById('float-move-branches').checked;
+      applyEdgeDistance(activeFloatingEdgeId, val, moveBr);
+    }
+    closeFloatingEdgeInput();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeFloatingEdgeInput();
+  }
+});
+
+document.getElementById('btn-recalc-distances')?.addEventListener('click', doRecalcAllDistances);
 
 /* =============================================
    ROUTE TEST
@@ -1543,6 +2213,15 @@ function validateMap() {
     });
     const conn=new Set(); floor.edges.forEach(e=>{conn.add(e.from);conn.add(e.to);});
     floor.nodes.forEach(n=>{ if(!conn.has(n.id)) w.push('['+floor.name+'] Node '+n.id+' ('+n.name+') tidak terhubung ke jalur manapun'); });
+    floor.edges.forEach(e=>{
+      const a=nm[e.from],b=nm[e.to];
+      if(a&&b){
+        const actual=euclidDist(a,b);
+        if(Math.abs((e.distance||0)-actual)>0.05){
+          w.push('['+floor.name+'] Jalur '+e.id+' ('+(a.name||e.from)+' \u2194 '+(b.name||e.to)+') jarak di data ('+(e.distance||0).toFixed(2)+'m) berbeda >0.05m dari koordinat ('+actual.toFixed(2)+'m)');
+        }
+      }
+    });
     if(floor.nodes.length>1&&floor.edges.length>0){
       const adj={}; floor.nodes.forEach(n=>adj[n.id]=[]);
       floor.edges.forEach(e=>{adj[e.from]?.push(e.to);adj[e.to]?.push(e.from);});
@@ -1721,25 +2400,6 @@ document.getElementById('btn-template-sample').addEventListener('click',()=>{
 });
 
 /* =============================================
-   AUTOSAVE
-   ============================================= */
-function autosave() {
-  try{localStorage.setItem(AUTOSAVE_KEY,JSON.stringify({floors:state.floors,nodeCounter:state.nodeCounter,edgeCounter:state.edgeCounter,floorCounter:state.floorCounter,currentFloorIdx:state.currentFloorIdx}));}catch(e){}
-}
-function loadAutosave() {
-  try{
-    const raw=localStorage.getItem(AUTOSAVE_KEY); if(!raw) return false;
-    const d=JSON.parse(raw); if(!d.floors||!d.floors.length) return false;
-    state.floors=d.floors; state.nodeCounter=d.nodeCounter||0;
-    state.edgeCounter=d.edgeCounter||0; state.floorCounter=d.floorCounter||0;
-    state.currentFloorIdx=d.currentFloorIdx||0; return true;
-  }catch(e){return false;}
-}
-
-document.getElementById('btn-undo').addEventListener('click',undo);
-document.getElementById('btn-redo').addEventListener('click',redo);
-
-/* =============================================
    MODAL HELPERS
    ============================================= */
 function openModal(id){document.getElementById(id).classList.add('open');}
@@ -1755,19 +2415,498 @@ function toast(msg,type='info'){
   c.appendChild(el); setTimeout(()=>el.remove(),2900);
 }
 
+document.getElementById('btn-undo').addEventListener('click',undo);
+document.getElementById('btn-redo').addEventListener('click',redo);
+
+/* =============================================
+   IndexedDB — SISTEM PENYIMPANAN UTAMA
+   DB: indoor_ar_map_db
+   Stores:
+     projects   : { id, name, createdAt, updatedAt, data:{floors,nodeCounter,...} }
+     blueprints : { key: floorId, value: base64 }
+     file_handles: { id: projectId, handle: FileSystemFileHandle }
+   ============================================= */
+const DB_NAME = 'indoor_ar_map_db';
+const DB_VERSION = 2;
+let _db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (_db) { resolve(_db); return; }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('projects'))
+        db.createObjectStore('projects', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('blueprints'))
+        db.createObjectStore('blueprints', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('file_handles'))
+        db.createObjectStore('file_handles', { keyPath: 'id' });
+    };
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror   = e => { reject(e.target.error); };
+  });
+}
+
+function dbOp(storeName, mode, fn) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
+    const req = fn(store);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  }));
+}
+
+const db = {
+  getAllProjects: () => openDB().then(db => new Promise((res, rej) => {
+    const tx = db.transaction('projects','readonly');
+    const req = tx.objectStore('projects').getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  })),
+  getProject:    id   => dbOp('projects','readonly',  s => s.get(id)),
+  putProject:    proj => dbOp('projects','readwrite',  s => s.put(proj)),
+  deleteProject: id   => dbOp('projects','readwrite',  s => s.delete(id)),
+  putBlueprint:  (key,val) => dbOp('blueprints','readwrite', s => s.put({key,value:val})),
+  getBlueprint:  key  => dbOp('blueprints','readonly',  s => s.get(key)).then(r=>r?.value||null),
+  delBlueprint:  key  => dbOp('blueprints','readwrite',  s => s.delete(key)),
+  putFileHandle: (id,handle) => dbOp('file_handles','readwrite', s => s.put({id,handle})),
+  getFileHandle: id   => dbOp('file_handles','readonly',  s => s.get(id)).then(r=>r?.handle||null),
+  delFileHandle: id   => dbOp('file_handles','readwrite',  s => s.delete(id)),
+};
+
+/* =============================================
+   PROJECT MANAGER STATE
+   ============================================= */
+const pm = {
+  projects: [],        // [{id, name, updatedAt}]
+  activeId: null,      // current project id
+  fileHandle: null,    // FileSystemFileHandle or null
+  fsSave: false,       // whether FS write is enabled
+  saveTimer: null,
+};
+
+function pmGenId() {
+  return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+}
+
+function pmSnapshotData() {
+  // Serialize state to a plain object (no Image objects)
+  return {
+    floors: JSON.parse(JSON.stringify(state.floors)),
+    nodeCounter: state.nodeCounter,
+    edgeCounter: state.edgeCounter,
+    floorCounter: state.floorCounter,
+    currentFloorIdx: state.currentFloorIdx,
+  };
+}
+
+function pmRestoreData(data) {
+  if (!data) return;
+  state.floors = data.floors || [];
+  state.nodeCounter  = data.nodeCounter  || 0;
+  state.edgeCounter  = data.edgeCounter  || 0;
+  state.floorCounter = data.floorCounter || 0;
+  state.currentFloorIdx = Math.min(data.currentFloorIdx || 0, Math.max(0, state.floors.length - 1));
+}
+
+/* =============================================
+   SAVE INDICATOR
+   ============================================= */
+function setSaveStatus(status, msg) {
+  const el = document.getElementById('save-indicator');
+  el.className = status;
+  el.textContent = msg;
+}
+
+/* =============================================
+   AUTOSAVE (debounced, IndexedDB)
+   ============================================= */
+let _saveDebounceTimer = null;
+
+function autosave() {
+  clearTimeout(_saveDebounceTimer);
+  setSaveStatus('saving', '&#128190; Menyimpan...');
+  _saveDebounceTimer = setTimeout(() => _doSave(), 500);
+}
+
+async function _doSave() {
+  if (!pm.activeId) return;
+  try {
+    setSaveStatus('saving', '&#128190; Menyimpan...');
+    const proj = await db.getProject(pm.activeId);
+    if (!proj) return; // project sudah dihapus, abaikan
+    proj.data = pmSnapshotData();
+    proj.updatedAt = Date.now();
+    // Save blueprint b64 ke store terpisah agar tidak bloat project object
+    for (const [floorId, bp] of Object.entries(state.blueprints)) {
+      if (bp.b64) await db.putBlueprint(pm.activeId + '_' + floorId, bp.b64);
+    }
+    await db.putProject(proj);
+    // Jika terhubung ke file, tulis ke file
+    if (pm.fileHandle && pm.fsSave) {
+      await _writeToFile();
+    }
+    // Update local list
+    const pidx = pm.projects.findIndex(p => p.id === pm.activeId);
+    if (pidx >= 0) { pm.projects[pidx].updatedAt = proj.updatedAt; pm.projects[pidx].name = proj.name; }
+    const now = new Date(proj.updatedAt);
+    const ts = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+    setSaveStatus('saved', '\u2713 Tersimpan ' + ts);
+  } catch (err) {
+    console.error('Autosave error:', err);
+    setSaveStatus('error', '\u26A0 Gagal: ' + (err.message||err));
+  }
+}
+
+/* Simpan saat tab ditutup / tersembunyi */
+window.addEventListener('beforeunload', () => {
+  // synchronous - coba flush
+  clearTimeout(_saveDebounceTimer);
+  _doSave();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearTimeout(_saveDebounceTimer); _doSave(); }
+});
+
+/* =============================================
+   FILE SYSTEM ACCESS API
+   ============================================= */
+const fsSupported = ('showSaveFilePicker' in window);
+
+function updateFileBadge() {
+  const badge = document.getElementById('file-link-badge');
+  const btn   = document.getElementById('btn-link-file');
+  if (pm.fileHandle) {
+    badge.textContent = '\uD83D\uDCCE ' + pm.fileHandle.name;
+    badge.style.display = 'flex';
+    btn.textContent = '\uD83D\uDD17 Putuskan File';
+    btn.classList.add('linked');
+  } else {
+    badge.style.display = 'none';
+    btn.textContent = '\uD83D\uDD17 File...';
+    btn.classList.remove('linked');
+  }
+}
+
+async function _writeToFile() {
+  if (!pm.fileHandle) return;
+  try {
+    let perm = await pm.fileHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      perm = await pm.fileHandle.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm !== 'granted') throw new Error('Izin file ditolak');
+    const json = buildJSON();
+    const writable = await pm.fileHandle.createWritable();
+    await writable.write(json);
+    await writable.close();
+  } catch (err) {
+    console.error('FS write error:', err);
+    setSaveStatus('error', '\u26A0 Gagal tulis file: ' + (err.message||err));
+  }
+}
+
+document.getElementById('btn-link-file').addEventListener('click', async () => {
+  if (!fsSupported) {
+    toast('Browser ini tidak mendukung File System Access API. Gunakan Ekspor JSON.', 'error');
+    return;
+  }
+  // Putuskan jika sudah terhubung
+  if (pm.fileHandle) {
+    if (!confirm('Putuskan koneksi ke file "' + pm.fileHandle.name + '"?')) return;
+    pm.fileHandle = null;
+    pm.fsSave = false;
+    if (pm.activeId) await db.delFileHandle(pm.activeId);
+    updateFileBadge();
+    toast('File diputus', 'info');
+    return;
+  }
+  try {
+    const opts = {
+      types: [{ description: 'JSON Map', accept: { 'application/json': ['.json'] } }],
+      suggestedName: 'map.json',
+    };
+    // Coba showOpenFilePicker agar user bisa pilih file lama
+    const [handle] = await window.showOpenFilePicker({ ...opts, multiple: false }).catch(async () => {
+      return [await window.showSaveFilePicker(opts)];
+    });
+    if (!handle) return;
+    pm.fileHandle = handle;
+    pm.fsSave = true;
+    if (pm.activeId) await db.putFileHandle(pm.activeId, handle);
+    updateFileBadge();
+    toast('File terhubung: ' + handle.name, 'success');
+    // Langsung tulis
+    await _writeToFile();
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Gagal menghubungkan file: ' + err.message, 'error');
+  }
+});
+
+document.getElementById('file-link-badge').addEventListener('click', async () => {
+  if (!pm.fileHandle) return;
+  if (!confirm('Putuskan koneksi ke file "' + pm.fileHandle.name + '"?')) return;
+  pm.fileHandle = null;
+  pm.fsSave = false;
+  if (pm.activeId) await db.delFileHandle(pm.activeId);
+  updateFileBadge();
+  toast('File diputus', 'info');
+});
+
+/* =============================================
+   PROJECT OPERATIONS
+   ============================================= */
+async function pmLoadProject(id) {
+  // Save current first
+  if (pm.activeId && pm.activeId !== id) {
+    clearTimeout(_saveDebounceTimer);
+    await _doSave();
+    pm.fileHandle = null; pm.fsSave = false;
+  }
+  const proj = await db.getProject(id);
+  if (!proj) { toast('Proyek tidak ditemukan', 'error'); return; }
+  pm.activeId = id;
+  state.undoStack = []; state.redoStack = [];
+  state.selectedNodeId = null; state.selectedEdgeId = null;
+  state.connectFromId = null; state.routePath = [];
+  state.blueprints = {};
+  pmRestoreData(proj.data);
+  // Restore blueprints
+  for (const f of state.floors) {
+    const b64 = await db.getBlueprint(id + '_' + f.id);
+    if (b64) {
+      const img = new Image();
+      await new Promise(res => { img.onload = res; img.src = b64; });
+      state.blueprints[f.id] = { img, b64, alpha: 0.5 };
+    }
+  }
+  // Try to restore file handle
+  try {
+    const handle = await db.getFileHandle(id);
+    if (handle) {
+      pm.fileHandle = handle;
+      // silently check permission - don't force request
+      const perm = await handle.queryPermission({ mode: 'readwrite' });
+      pm.fsSave = (perm === 'granted');
+    }
+  } catch(e) { /* handle may be gone */ }
+  updateFileBadge();
+  pmUpdateSelect();
+  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); updateRouteSelects();
+  setTool('add-node');
+  resizeCanvas();
+  setTimeout(fitView, 80);
+  toast('Proyek "' + proj.name + '" dimuat', 'success');
+}
+
+async function pmCreateProject(name, data) {
+  const id = pmGenId();
+  const proj = {
+    id,
+    name: name || 'Peta Baru',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    data: data || {
+      floors: [], nodeCounter: 0, edgeCounter: 0, floorCounter: 0, currentFloorIdx: 0,
+    },
+  };
+  await db.putProject(proj);
+  pm.projects.push({ id: proj.id, name: proj.name, updatedAt: proj.updatedAt });
+  return proj;
+}
+
+async function pmRefreshList() {
+  const all = await db.getAllProjects();
+  pm.projects = all.map(p => ({ id: p.id, name: p.name, updatedAt: p.updatedAt }))
+                   .sort((a,b) => b.updatedAt - a.updatedAt);
+}
+
+function pmUpdateSelect() {
+  const sel = document.getElementById('project-select');
+  sel.innerHTML = pm.projects.map(p =>
+    `<option value="${p.id}" ${p.id===pm.activeId?'selected':''}>${p.name}</option>`
+  ).join('');
+}
+
+document.getElementById('project-select').addEventListener('change', async e => {
+  const id = e.target.value;
+  if (id === pm.activeId) return;
+  if (state.floors.some(f => f.nodes.length > 0 || f.edges.length > 0)) {
+    clearTimeout(_saveDebounceTimer);
+    await _doSave();
+  }
+  await pmLoadProject(id);
+});
+
+/* =============================================
+   PROJECT MANAGER MODAL
+   ============================================= */
+function pmRenderList() {
+  const el = document.getElementById('proj-list');
+  if (!pm.projects.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">Tidak ada proyek</div>';
+    return;
+  }
+  el.innerHTML = pm.projects.map(p => {
+    const d = new Date(p.updatedAt);
+    const ds = d.toLocaleDateString('id-ID') + ' ' + d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+    return `<div class="proj-list-item ${p.id===pm.activeId?'active':''}" data-id="${p.id}">
+      <div class="proj-name">${p.name}</div>
+      <div class="proj-date">${ds}</div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.proj-list-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const id = item.dataset.id;
+      if (id === pm.activeId) return;
+      closeModal('proj-manage-modal');
+      await pmLoadProject(id);
+    });
+  });
+}
+
+document.getElementById('btn-proj-manage').addEventListener('click', () => {
+  pmRenderList();
+  openModal('proj-manage-modal');
+});
+document.getElementById('btn-proj-manage-close').addEventListener('click', () => closeModal('proj-manage-modal'));
+
+/* Rename */
+document.getElementById('btn-proj-rename').addEventListener('click', () => {
+  const cur = pm.projects.find(p => p.id === pm.activeId);
+  if (!cur) { toast('Tidak ada proyek aktif', 'error'); return; }
+  document.getElementById('proj-rename-input').value = cur.name;
+  closeModal('proj-manage-modal');
+  openModal('proj-rename-modal');
+});
+document.getElementById('btn-proj-rename-cancel').addEventListener('click', () => closeModal('proj-rename-modal'));
+document.getElementById('btn-proj-rename-ok').addEventListener('click', async () => {
+  const name = document.getElementById('proj-rename-input').value.trim();
+  if (!name) { toast('Nama tidak boleh kosong', 'error'); return; }
+  const proj = await db.getProject(pm.activeId);
+  if (!proj) return;
+  proj.name = name;
+  proj.updatedAt = Date.now();
+  await db.putProject(proj);
+  await pmRefreshList();
+  pmUpdateSelect();
+  closeModal('proj-rename-modal');
+  toast('Nama diubah ke "' + name + '"', 'success');
+});
+
+/* Duplicate */
+document.getElementById('btn-proj-duplicate').addEventListener('click', async () => {
+  const proj = await db.getProject(pm.activeId);
+  if (!proj) return;
+  const newProj = await pmCreateProject(proj.name + ' (Salinan)', JSON.parse(JSON.stringify(proj.data)));
+  // Copy blueprints
+  for (const f of (proj.data?.floors || [])) {
+    const b64 = await db.getBlueprint(proj.id + '_' + f.id);
+    if (b64) await db.putBlueprint(newProj.id + '_' + f.id, b64);
+  }
+  await pmRefreshList();
+  pmUpdateSelect();
+  closeModal('proj-manage-modal');
+  toast('Proyek diduplikat', 'success');
+});
+
+/* Delete */
+document.getElementById('btn-proj-delete').addEventListener('click', async () => {
+  if (pm.projects.length <= 1) { toast('Tidak bisa menghapus satu-satunya proyek', 'error'); return; }
+  const cur = pm.projects.find(p => p.id === pm.activeId);
+  if (!confirm('Hapus proyek "' + (cur?.name||'') + '"? Tindakan ini tidak bisa diurungkan.')) return;
+  // Delete blueprints
+  const proj = await db.getProject(pm.activeId);
+  for (const f of (proj?.data?.floors || [])) {
+    await db.delBlueprint(pm.activeId + '_' + f.id);
+  }
+  await db.delFileHandle(pm.activeId);
+  await db.deleteProject(pm.activeId);
+  await pmRefreshList();
+  closeModal('proj-manage-modal');
+  if (pm.projects.length) {
+    await pmLoadProject(pm.projects[0].id);
+  }
+  toast('Proyek dihapus', 'info');
+});
+
+/* New project button */
+document.getElementById('btn-proj-new').addEventListener('click', () => {
+  document.getElementById('proj-new-name').value = 'Peta Baru ' + (pm.projects.length + 1);
+  openModal('proj-new-modal');
+});
+document.getElementById('btn-proj-new-cancel').addEventListener('click', () => closeModal('proj-new-modal'));
+document.getElementById('btn-proj-new-ok').addEventListener('click', async () => {
+  const name = document.getElementById('proj-new-name').value.trim() || 'Peta Baru';
+  // Save current first
+  clearTimeout(_saveDebounceTimer);
+  await _doSave();
+  // Create new project with empty floor
+  state.undoStack = []; state.redoStack = [];
+  state.floors = []; state.blueprints = {};
+  state.nodeCounter = 0; state.edgeCounter = 0; state.floorCounter = 0;
+  state.selectedNodeId = null; state.selectedEdgeId = null; state.routePath = [];
+  state.floors.push(createFloor('Lantai 1', 40, 25));
+  state.currentFloorIdx = 0;
+  const proj = await pmCreateProject(name, pmSnapshotData());
+  pm.activeId = proj.id;
+  pm.fileHandle = null; pm.fsSave = false;
+  await pmRefreshList();
+  pmUpdateSelect();
+  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); updateRouteSelects();
+  setTool('add-node');
+  setTimeout(fitView, 80);
+  updateFileBadge();
+  closeModal('proj-new-modal');
+  toast('Proyek "' + name + '" dibuat', 'success');
+  // Ask about file link
+  if (fsSupported && confirm('Ingin menghubungkan proyek ini ke file .json?')) {
+    document.getElementById('btn-link-file').click();
+  }
+});
+
 /* =============================================
    INISIALISASI
    ============================================= */
 window.addEventListener('resize', resizeCanvas);
 
-function init() {
-  const loaded=loadAutosave();
-  if(!loaded){ state.floors.push(createFloor('Lantai 1',40,25)); }
-  updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); updateRouteSelects();
-  setTool('add-node');
-  resizeCanvas();
-  setTimeout(fitView, 100);
-  if(loaded) toast('Data tersimpan berhasil dimuat \u2713','success');
+async function init() {
+  try {
+    await pmRefreshList();
+    if (pm.projects.length === 0) {
+      // First run: create default project
+      state.floors.push(createFloor('Lantai 1', 40, 25));
+      const proj = await pmCreateProject('Peta Saya', pmSnapshotData());
+      pm.activeId = proj.id;
+      await pmRefreshList();
+    } else {
+      // Load last updated project
+      const last = pm.projects[0]; // already sorted by updatedAt desc
+      pm.activeId = last.id;
+      await pmLoadProject(last.id);
+    }
+    pmUpdateSelect();
+    updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); updateRouteSelects();
+    setTool('add-node');
+    resizeCanvas();
+    setTimeout(fitView, 100);
+    updateFileBadge();
+    if (!fsSupported) {
+      document.getElementById('btn-link-file').title = 'File System Access tidak didukung browser ini';
+      document.getElementById('btn-link-file').style.opacity = '0.4';
+    }
+  } catch(err) {
+    console.error('Init error:', err);
+    // Fallback: empty project
+    state.floors.push(createFloor('Lantai 1', 40, 25));
+    updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); updateRouteSelects();
+    setTool('add-node');
+    resizeCanvas();
+    setTimeout(fitView, 100);
+    toast('Gagal memuat dari penyimpanan: ' + err.message, 'error');
+  }
 }
 
 init();

@@ -64,10 +64,15 @@ class ARProjector {
   /// Jarak pandang maksimal rute ke depan yang diproyeksikan (dalam meter).
   final double maxProjectionDistance;
 
+  /// Jarak minimal proyeksi (dalam meter). Jika jarak < minProjectionDistance,
+  /// objek tidak akan diproyeksikan untuk mencegah panah membesar tanpa batas / menimpa UI.
+  final double minProjectionDistance;
+
   const ARProjector({
     this.cameraHeight = 1.4,
     this.fovHorizontalDeg = 60.0,
     this.maxProjectionDistance = 15.0,
+    this.minProjectionDistance = 0.5,
   });
 
   /// Normalisasi sudut dalam rentang [0, 360) derajat.
@@ -83,6 +88,21 @@ class ARProjector {
     if (diff > 180.0) diff -= 360.0;
     if (diff < -180.0) diff += 360.0;
     return diff;
+  }
+
+  /// Menghitung sudut relatif (dalam rentang [-180, 180] derajat) antara arah rute/target (mapBearing)
+  /// dan arah hadap perangkat di denah (deviceHeading).
+  /// 0° = tepat lurus ke depan, positif = belok kanan, negatif = belok kiri.
+  static double calculateRelativeAngleDeg(double mapBearingDeg, double deviceHeadingDeg) {
+    return angleDifferenceDeg(mapBearingDeg, deviceHeadingDeg);
+  }
+
+  /// Interpolasi sudut terpendek (Angular Lerp) dari [currentDeg] ke [targetDeg] dengan faktor [t] (0.0 - 1.0).
+  /// Mencegah panah berputar instan atau berputar jauh saat sudut melintasi batas ±180°.
+  static double lerpAngleDeg(double currentDeg, double targetDeg, double t) {
+    final diff = angleDifferenceDeg(targetDeg, currentDeg);
+    final next = currentDeg + diff * t.clamp(0.0, 1.0);
+    return angleDifferenceDeg(next, 0.0);
   }
 
   /// Menghitung arah hadap (*bearing*) dari titik [from] ke titik [to]
@@ -125,8 +145,8 @@ class ARProjector {
     final deltaY = point.dy - userPosition.dy;
     final horizontalDist = math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    // Abaikan jika melebihi jarak pandang maksimal
-    if (horizontalDist > maxProjectionDistance) {
+    // Abaikan jika melebihi jarak pandang maksimal atau kurang dari batas minimal (< 0.5m)
+    if (horizontalDist > maxProjectionDistance || horizontalDist < minProjectionDistance) {
       return null;
     }
 
@@ -159,8 +179,8 @@ class ARProjector {
     final yCam = yFloor * cosP + zForward * sinP;
     final xCam = xRight;
 
-    // Titik berada di belakang lensa kamera atau terlalu dekat (< 0.2 m)
-    if (zCam <= 0.2) {
+    // Titik berada di belakang lensa kamera atau terlalu dekat (< minProjectionDistance / 0.5 m)
+    if (zCam < minProjectionDistance || zCam <= 0.2) {
       return null;
     }
 
@@ -185,7 +205,8 @@ class ARProjector {
         screenY >= -20 &&
         screenY <= screenSize.height + 20;
 
-    final scaleFactor = (fx / zCam).clamp(0.1, 500.0);
+    // Batasi skala agar tidak membesar tanpa batas dan menutupi UI
+    final scaleFactor = (fx / math.max(zCam, minProjectionDistance)).clamp(0.1, 120.0);
 
     return ProjectedPoint(
       screenPosition: Offset(screenX, screenY),
@@ -217,7 +238,7 @@ class ARProjector {
         angleDifferenceDeg: diff,
         label: 'Sedikit Serong Kanan',
       );
-    } else if (diff > 55.0 && diff <= 125.0) {
+    } else if (diff > 55.0 && diff <= 120.0) {
       return OffScreenGuidance(
         direction: TurnDirection.right,
         angleDifferenceDeg: diff,
@@ -229,7 +250,7 @@ class ARProjector {
         angleDifferenceDeg: diff,
         label: 'Sedikit Serong Kiri',
       );
-    } else if (diff < -55.0 && diff >= -125.0) {
+    } else if (diff < -55.0 && diff >= -120.0) {
       return OffScreenGuidance(
         direction: TurnDirection.left,
         angleDifferenceDeg: diff,
@@ -247,16 +268,26 @@ class ARProjector {
   /// Menginterpolasi daftar node rute menjadi titik-titik berjarak rapat (setiap [spacing] meter)
   /// hingga jarak maksimal [maxDistance] meter dari posisi pengguna,
   /// agar panah AR di lantai dapat digambar berjejer secara mulus.
+  ///
+  /// Jika [minDistance] > 0, titik-titik dengan jarak < [minDistance] akan dilewati (misal lookahead 1.5 - 2m).
+  /// [maxPoints] membatasi jumlah maksimal titik yang dihasilkan jika bernilai > 0.
   static List<Offset> interpolateRoutePoints(
     List<Offset> waypoints, {
     double spacing = 1.0,
     double maxDistance = 15.0,
+    double minDistance = 0.0,
+    int maxPoints = -1,
   }) {
     if (waypoints.isEmpty) return [];
-    if (waypoints.length == 1) return [waypoints.first];
+    if (waypoints.length == 1) return minDistance <= 0.0 ? [waypoints.first] : [];
 
-    final result = <Offset>[waypoints.first];
+    final result = <Offset>[];
+    if (minDistance <= 0.0) {
+      result.add(waypoints.first);
+    }
+
     double accumulatedDistance = 0.0;
+    double nextSampleDist = minDistance > 0.0 ? minDistance : spacing;
 
     for (int i = 0; i < waypoints.length - 1; i++) {
       final p1 = waypoints[i];
@@ -267,19 +298,28 @@ class ARProjector {
 
       if (segLength <= 0.001) continue;
 
-      double cur = spacing;
-      while (cur < segLength) {
-        accumulatedDistance += spacing;
-        if (accumulatedDistance > maxDistance) {
+      final segStartDist = accumulatedDistance;
+      final segEndDist = accumulatedDistance + segLength;
+
+      while (nextSampleDist <= segEndDist) {
+        if (nextSampleDist > maxDistance) {
           return result;
         }
-        final ratio = cur / segLength;
+        if (maxPoints > 0 && result.length >= maxPoints) {
+          return result;
+        }
+
+        final distIntoSeg = nextSampleDist - segStartDist;
+        final ratio = (distIntoSeg / segLength).clamp(0.0, 1.0);
         result.add(Offset(p1.dx + segDx * ratio, p1.dy + segDy * ratio));
-        cur += spacing;
+
+        nextSampleDist += spacing;
       }
+
+      accumulatedDistance = segEndDist;
     }
 
-    if (result.length < 2 && waypoints.length > 1) {
+    if (minDistance <= 0.0 && result.length < 2 && waypoints.length > 1) {
       result.add(waypoints[1]);
     }
 

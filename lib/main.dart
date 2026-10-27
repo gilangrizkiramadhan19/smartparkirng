@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'pages/map_page.dart';
+import 'services/map_repository.dart';
 import 'services/navigation_controller.dart';
-import 'services/parking_repository.dart';
 import 'services/position_provider.dart';
 
 void main() {
@@ -17,17 +17,17 @@ class SmartParkingApp extends StatefulWidget {
 }
 
 class _SmartParkingAppState extends State<SmartParkingApp> {
-  late final ParkingRepository _repository;
+  late final MapRepository _mapRepository;
   late final PositionProvider _positionProvider;
   late final NavigationController _navigationController;
 
   @override
   void initState() {
     super.initState();
-    _repository = MockParkingRepository();
-    _positionProvider = SimulatedPositionProvider();
+    _mapRepository = MapRepository();
+    _positionProvider = ManualPositionProvider();
     _navigationController = NavigationController(
-      repository: _repository,
+      mapRepository: _mapRepository,
       positionProvider: _positionProvider,
     );
   }

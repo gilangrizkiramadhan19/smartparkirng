@@ -5,34 +5,58 @@ import '../services/ar_projector.dart';
 
 /// CustomPainter untuk merender elemen AR di atas preview kamera:
 /// 1. Jalur panah (chevron) neon 3D menempel di lantai dengan efek perspektif & pulse gerak.
-/// 2. Pin 3D melayang di atas slot parkir tujuan.
-/// 3. Indikator belok di tepi layar jika rute berada di luar pandangan kamera.
+/// 2. Panah penuntun utama 3D besar di tengah-bawah layar (berputar sesuai sudut relatif).
+/// 3. Pin 3D melayang di atas slot parkir tujuan.
+/// 4. Indikator belok di tepi layar jika rute berada di luar pandangan kamera.
 class AROverlayPainter extends CustomPainter {
   final List<Node> currentRoute;
   final Node? userPosition;
+  final Offset? rawUserPosition;
   final double mapHeadingDeg;
   final double pitchDeg;
   final ParkingSlot? targetSlot;
-  final double animationValue; // 0.0 - 1.0 untuk animasi pulse berjalan
+  final double animationValue;
   final ARProjector projector;
+  final bool isNavigating;
+  final bool isCalibrated;
+  final double smoothedRelativeAngleDeg;
+
 
   AROverlayPainter({
     required this.currentRoute,
-    required this.userPosition,
+    this.userPosition,
+    this.rawUserPosition,
     required this.mapHeadingDeg,
     required this.pitchDeg,
     this.targetSlot,
     required this.animationValue,
     this.projector = const ARProjector(),
+    this.isNavigating = false,
+    this.isCalibrated = false,
+    this.smoothedRelativeAngleDeg = 0.0,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (userPosition == null || currentRoute.isEmpty) {
+    // Pisahkan logika posisi: Gunakan Pos Raw untuk proyeksi & sudut kamera AR,
+    // BUKAN Pos Snap (yang terdistorsi ke koridor/graf).
+    final userOffset = rawUserPosition ??
+        (userPosition != null ? Offset(userPosition!.x, userPosition!.y) : null);
+
+    if (userOffset == null || currentRoute.isEmpty) {
       return;
     }
 
-    final userOffset = Offset(userPosition!.x, userPosition!.y);
+    // Pin tujuan tetap digambar jika slot tujuan diset dan user mendekatinya
+    if (targetSlot != null) {
+      _drawDestinationPin(canvas, size, userOffset);
+    }
+
+    // Panah dan chevron HANYA tampil setelah tombol "Mulai Navigasi" ditekan
+    // DAN kalibrasi sensor telah selesai.
+    if (!isNavigating || !isCalibrated) {
+      return;
+    }
 
     // Kumpulkan titik-titik rute ke depan
     final waypoints = <Offset>[
@@ -40,16 +64,17 @@ class AROverlayPainter extends CustomPainter {
       ...currentRoute.map((n) => Offset(n.x, n.y)),
     ];
 
-    // 1. Interpolasi titik-titik rute agar rapat (~1.2 meter antar panah)
-    final densePoints = ARProjector.interpolateRoutePoints(
-      waypoints,
-      spacing: 1.2,
-      maxDistance: 16.0,
+    // 1 & 2. Interpolasi rute: dapatkan titik-titik koordinat baru setiap interval 1.5 meter
+    final routePoints = _interpolateRoutePoints(
+      userOffset,
+      currentRoute,
+      interval: 1.5,
+      maxDistance: 15.0,
     );
 
-    // Proyeksikan setiap titik ke koordinat piksel layar
+    // 3. Proyeksikan setiap titik interval ke layar menggunakan ARProjector
     final projectedList = <ProjectedPoint?>[];
-    for (final pt in densePoints) {
+    for (final pt in routePoints) {
       projectedList.add(
         projector.projectPoint(
           point: pt,
@@ -61,141 +86,306 @@ class AROverlayPainter extends CustomPainter {
       );
     }
 
-    // 2. Gambar Jalur Lintasan di Lantai
-    _drawFloorPathRibbon(canvas, projectedList);
+    // Gambar rentetan chevron (V terbalik) terpisah dengan efek Neon 2-Layer di lantai
+    _drawChevrons(canvas, size, projectedList);
 
-    // 3. Gambar Rangkaian Chevron (Panah) 3D Menempel di Lantai
-    _drawChevrons(canvas, projectedList);
-
-    // 4. Gambar Pin Melayang di Atas Slot Tujuan (jika ada dan terjangkau)
-    if (targetSlot != null) {
-      _drawDestinationPin(canvas, size, userOffset);
-    }
+    // 4. Gambar Panah Penuntun Utama 3D Besar di Tengah Bawah Layar
+    _drawMainGuidingArrow(canvas, size);
 
     // 5. Cek apakah rute berikutnya berada di luar layar, gambar indikator tepi
     _drawOffScreenIndicatorIfNeeded(canvas, size, userOffset, waypoints);
   }
 
-  /// Menggambar pita lintasan lantai bercahaya tipis di bawah panah
-  void _drawFloorPathRibbon(Canvas canvas, List<ProjectedPoint?> projectedList) {
-    final validPoints = projectedList.whereType<ProjectedPoint>().toList();
-    if (validPoints.length < 2) return;
+  /// Menelusuri total panjang rute dan menghasilkan titik-titik koordinat dengan interval jarak tetap (1.5 m)
+  List<Offset> _interpolateRoutePoints(
+    Offset startPos,
+    List<Node> route, {
+    double interval = 1.5,
+    double maxDistance = 15.0,
+  }) {
+    if (route.isEmpty) return [];
 
-    final path = Path();
-    bool started = false;
+    final waypoints = <Offset>[
+      startPos,
+      ...route.map((n) => Offset(n.x, n.y)),
+    ];
 
-    for (final p in validPoints) {
-      if (!started) {
-        path.moveTo(p.screenPosition.dx, p.screenPosition.dy);
-        started = true;
-      } else {
-        path.lineTo(p.screenPosition.dx, p.screenPosition.dy);
+    final sampledPoints = <Offset>[];
+    double accumulatedDist = 0.0;
+    double nextTargetDist = interval; // Titik pertama dimulai 1.5 meter di depan user
+
+    for (int i = 0; i < waypoints.length - 1; i++) {
+      final p1 = waypoints[i];
+      final p2 = waypoints[i + 1];
+      final segDx = p2.dx - p1.dx;
+      final segDy = p2.dy - p1.dy;
+      final segLen = math.sqrt(segDx * segDx + segDy * segDy);
+
+      if (segLen <= 0.001) continue;
+
+      final segStartDist = accumulatedDist;
+      final segEndDist = accumulatedDist + segLen;
+
+      while (nextTargetDist <= segEndDist) {
+        if (nextTargetDist > maxDistance) return sampledPoints;
+
+        final t = (nextTargetDist - segStartDist) / segLen;
+        sampledPoints.add(Offset(p1.dx + segDx * t, p1.dy + segDy * t));
+        nextTargetDist += interval;
       }
+
+      accumulatedDist = segEndDist;
+      if (nextTargetDist > maxDistance) break;
     }
 
-    // Garis glow lembut
-    final glowPaint = Paint()
-      ..color = const Color(0x3300FF88)
-      ..strokeWidth = 14.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
-
-    canvas.drawPath(path, glowPaint);
-
-    final linePaint = Paint()
-      ..color = const Color(0x6600E5FF)
-      ..strokeWidth = 4.0
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..style = PaintingStyle.stroke;
-
-    canvas.drawPath(path, linePaint);
+    return sampledPoints;
   }
 
-  /// Menggambar rangkaian chevron (panah 3D) di sepanjang lintasan
-  void _drawChevrons(Canvas canvas, List<ProjectedPoint?> projectedList) {
-    if (projectedList.length < 2) return;
+  /// Menggambar rentetan chevron (V terbalik) terpisah bercahaya neon (Glow + Core) di lantai
+  void _drawChevrons(Canvas canvas, Size size, List<ProjectedPoint?> projectedList) {
+    if (projectedList.isEmpty) return;
 
-    for (int i = 0; i < projectedList.length - 1; i++) {
+    const double maxLookahead = 15.0;
+
+    for (int i = 0; i < projectedList.length; i++) {
       final pCurrent = projectedList[i];
-      final pNext = projectedList[i + 1];
+      if (pCurrent == null || !pCurrent.isVisibleOnScreen) continue;
 
-      if (pCurrent == null || pNext == null) continue;
-      if (!pCurrent.isVisibleOnScreen && !pNext.isVisibleOnScreen) continue;
+      // Skalakan ukuran, ketebalan, dan opasitas berdasarkan properti depth
+      final double depth = pCurrent.depth;
+      final double depthScale = (1.0 / math.max(depth, 1.0)).clamp(0.1, 1.0);
+      final double opacity = (1.0 - (depth / maxLookahead)).clamp(0.15, 1.0);
 
-      // Hitung sudut rotasi panah pada layar (mengarah ke titik berikutnya)
-      final dx = pNext.screenPosition.dx - pCurrent.screenPosition.dx;
-      final dy = pNext.screenPosition.dy - pCurrent.screenPosition.dy;
-      final angle = math.atan2(dy, dx);
+      final double armWidth = 52.0 * depthScale;
+      final double armLength = 28.0 * depthScale;
 
-      // Skala perspektif: panah dekat lebih besar, jauh lebih kecil
-      // Lebar dasar 0.8 meter dikalikan faktor skala proyeksi
-      final baseWidth = (pCurrent.scale * 0.45).clamp(10.0, 90.0);
-      final baseLength = baseWidth * 0.75;
+      // Layer 1 (Glow): Garis tebal dengan MaskFilter blur untuk pancaran cahaya neon
+      final glowPaint = Paint()
+        ..color = Colors.cyanAccent.withValues(alpha: opacity * 0.75)
+        ..strokeWidth = (10.0 * depthScale).clamp(3.0, 10.0)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
 
-      // Efek animasi pulse gelombang berjalan ke depan
-      final pulsePhase = ((i / projectedList.length) - animationValue) % 1.0;
-      final pulseFactor = math.sin((pulsePhase < 0 ? pulsePhase + 1.0 : pulsePhase) * math.pi);
-      final alpha = (0.55 + 0.45 * pulseFactor).clamp(0.2, 1.0);
+      // Layer 2 (Core): Garis tipis tanpa blur di tengah untuk inti neon putih-cyan yang tajam
+      final corePaint = Paint()
+        ..color = Colors.white.withValues(alpha: opacity)
+        ..strokeWidth = (3.2 * depthScale).clamp(1.2, 3.2)
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..style = PaintingStyle.stroke;
+
+      // Hitung orientasi rotasi chevron menghadap searah jalur rute berikutnya
+      double angle;
+      if (i < projectedList.length - 1 && projectedList[i + 1] != null) {
+        final nextPos = projectedList[i + 1]!.screenPosition;
+        final dx = nextPos.dx - pCurrent.screenPosition.dx;
+        final dy = nextPos.dy - pCurrent.screenPosition.dy;
+        angle = math.atan2(dy, dx);
+      } else if (i > 0 && projectedList[i - 1] != null) {
+        final prevPos = projectedList[i - 1]!.screenPosition;
+        final dx = pCurrent.screenPosition.dx - prevPos.dx;
+        final dy = pCurrent.screenPosition.dy - prevPos.dy;
+        angle = math.atan2(dy, dx);
+      } else {
+        angle = -math.pi / 2.0; // Default menghadap ke depan layar
+      }
 
       canvas.save();
       canvas.translate(pCurrent.screenPosition.dx, pCurrent.screenPosition.dy);
       canvas.rotate(angle);
 
-      // Gambar bayangan / glow panah
-      final shadowPath = _createChevronPath(baseWidth * 1.15, baseLength * 1.15);
-      final shadowPaint = Paint()
-        ..color = Color.fromRGBO(0, 255, 136, alpha * 0.4)
-        ..style = PaintingStyle.fill
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
-      canvas.drawPath(shadowPath, shadowPaint);
+      // Bentuk 1 buah Chevron (V terbalik menghadap arah jalur)
+      final chevronPath = Path()
+        ..moveTo(-armLength, -armWidth / 2.0)
+        ..lineTo(0, 0) // Ujung depan (tip)
+        ..lineTo(-armLength, armWidth / 2.0);
 
-      // Gambar panah hijau neon utama
-      final chevronPath = _createChevronPath(baseWidth, baseLength);
-      final chevronPaint = Paint()
-        ..shader = LinearGradient(
-          colors: [
-            Color.fromRGBO(0, 229, 255, alpha),
-            Color.fromRGBO(0, 255, 136, alpha),
-          ],
-        ).createShader(Rect.fromLTWH(-baseLength, -baseWidth / 2, baseLength * 1.5, baseWidth))
-        ..style = PaintingStyle.fill;
-      canvas.drawPath(chevronPath, chevronPaint);
+      // Render Layer 1: Glow neon tebal
+      canvas.drawPath(chevronPath, glowPaint);
 
-      // Border tajam warna putih-hijau
-      final borderPaint = Paint()
-        ..color = Color.fromRGBO(255, 255, 255, alpha * 0.9)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = (baseWidth * 0.08).clamp(1.5, 3.5);
-      canvas.drawPath(chevronPath, borderPaint);
+      // Render Layer 2: Core neon tipis & tajam
+      canvas.drawPath(chevronPath, corePaint);
 
       canvas.restore();
     }
   }
 
-  /// Membuat bentuk geometri chevron/panah
-  Path _createChevronPath(double width, double length) {
+
+
+  /// Menggambar satu panah penuntun utama 3D besar di tengah-bawah layar (~70% tinggi layar)
+  /// yang berputar sebesar sudut relatif target terhadap arah hadap HP.
+  void _drawMainGuidingArrow(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2.0, size.height * 0.70);
+    final isUTurn = smoothedRelativeAngleDeg.abs() > 120.0;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+
+    // 1. Cincin radar kompas futuristik berdenyut halus
+    final pulse = 1.0 + 0.05 * math.sin(animationValue * 2 * math.pi);
+    final ringRadius = 46.0 * pulse;
+
+    final discPaint = Paint()
+      ..color = const Color(0x880F1420)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset.zero, ringRadius, discPaint);
+
+    final glowRingPaint = Paint()
+      ..color = isUTurn ? const Color(0x44FF3D00) : const Color(0x3300FF88)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
+    canvas.drawCircle(Offset.zero, ringRadius, glowRingPaint);
+
+    final ringBorderPaint = Paint()
+      ..color = isUTurn ? const Color(0xAAFF5252) : const Color(0x8800E5FF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    canvas.drawCircle(Offset.zero, ringRadius, ringBorderPaint);
+
+    // Crosshair lembut di radar
+    final crossPaint = Paint()
+      ..color = Colors.white24
+      ..strokeWidth = 1.0;
+    canvas.drawLine(const Offset(-8, 0), const Offset(8, 0), crossPaint);
+    canvas.drawLine(const Offset(0, -8), const Offset(0, 8), crossPaint);
+
+    // 2. Rotasi panah sesuai sudut relatif (0° = menunjuk lurus ke atas / depan layar)
+    final rotRad = smoothedRelativeAngleDeg * math.pi / 180.0;
+    canvas.rotate(rotRad);
+
+    const arrowLength = 52.0;
+    const arrowWidth = 42.0;
+
+    // Bayangan glow di bawah panah
+    final shadowPath = _createMainArrowPath(arrowWidth * 1.15, arrowLength * 1.15);
+    final shadowPaint = Paint()
+      ..color = isUTurn ? const Color(0x66FF1744) : const Color(0x6600E5FF)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10.0)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(shadowPath, shadowPaint);
+
+    // Belahan kiri panah 3D (highlight lebih terang)
+    final leftPath = _createMainArrowHalfPath(arrowWidth, arrowLength, isLeft: true);
+    final leftPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomLeft,
+        colors: isUTurn
+            ? [const Color(0xFFFF8A80), const Color(0xFFFF1744)]
+            : [const Color(0xFF00FFFF), const Color(0xFF00E676)],
+      ).createShader(Rect.fromLTWH(-arrowWidth / 2, -arrowLength * 0.6, arrowWidth / 2, arrowLength))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(leftPath, leftPaint);
+
+    // Belahan kanan panah 3D (shading lebih gelap untuk efek beveled 3D)
+    final rightPath = _createMainArrowHalfPath(arrowWidth, arrowLength, isLeft: false);
+    final rightPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomRight,
+        colors: isUTurn
+            ? [const Color(0xFFFF5252), const Color(0xFFD50000)]
+            : [const Color(0xFF00B0FF), const Color(0xFF00BFA5)],
+      ).createShader(Rect.fromLTWH(0, -arrowLength * 0.6, arrowWidth / 2, arrowLength))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(rightPath, rightPaint);
+
+    // Garis rim luar putih tajam
+    final fullPath = _createMainArrowPath(arrowWidth, arrowLength);
+    final outlinePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(fullPath, outlinePaint);
+
+    // Garis ridge tengah 3D
+    final ridgePaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.5;
+    canvas.drawLine(
+      Offset(0, -arrowLength * 0.6),
+      Offset(0, arrowLength * 0.25),
+      ridgePaint,
+    );
+
+    canvas.restore();
+
+    // 3. Jika sudut relatif > 120°, tampilkan teks "Putar Balik"
+    if (isUTurn) {
+      _drawUTurnBadge(canvas, center.translate(0, 48));
+    }
+  }
+
+  /// Membuat jalur penuh panah penuntun 3D (menghadap ke ATAS pada orientasi 0)
+  Path _createMainArrowPath(double width, double length) {
     final path = Path();
     final halfW = width / 2.0;
-    final indent = length * 0.45;
 
-    // Panah menghadap sumbu +X (ke kanan) saat rotasi 0
-    path.moveTo(length, 0); // Ujung runcing depan
-    path.lineTo(0, -halfW); // Sayap kiri
-    path.lineTo(indent, 0); // Lekukan tengah belakang
-    path.lineTo(0, halfW); // Sayap kanan
+    path.moveTo(0, -length * 0.6); // Ujung panah atas
+    path.lineTo(-halfW, length * 0.4); // Sayap kiri
+    path.lineTo(0, length * 0.25); // Lekukan tengah belakang
+    path.lineTo(halfW, length * 0.4); // Sayap kanan
     path.close();
 
     return path;
+  }
+
+  /// Membuat separuh belahan panah penuntun 3D untuk efek pencahayaan berbeda
+  Path _createMainArrowHalfPath(double width, double length, {required bool isLeft}) {
+    final path = Path();
+    final xSign = isLeft ? -1.0 : 1.0;
+    final halfW = (width / 2.0) * xSign;
+
+    path.moveTo(0, -length * 0.6);
+    path.lineTo(halfW, length * 0.4);
+    path.lineTo(0, length * 0.25);
+    path.close();
+
+    return path;
+  }
+
+  /// Menggambar badge peringatan "Putar Balik"
+  void _drawUTurnBadge(Canvas canvas, Offset position) {
+    const pillW = 120.0;
+    const pillH = 30.0;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: position, width: pillW, height: pillH),
+      const Radius.circular(15),
+    );
+    final bgPaint = Paint()
+      ..color = const Color(0xE6D50000)
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = const Color(0xFFFF5252)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRRect(rrect, bgPaint);
+    canvas.drawRRect(rrect, borderPaint);
+
+    final tp = TextPainter(
+      text: const TextSpan(
+        text: '🔄 Putar Balik',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    tp.layout();
+    tp.paint(canvas, Offset(position.dx - tp.width / 2, position.dy - tp.height / 2));
   }
 
   /// Menggambar pin 3D melayang di atas slot tujuan
   void _drawDestinationPin(Canvas canvas, Size size, Offset userOffset) {
     final slotOffset = Offset(targetSlot!.x, targetSlot!.y);
     final dist = (slotOffset - userOffset).distance;
-    if (dist > 18.0) return; // Hanya gambar jika dalam radius 18 m
+    if (dist < 0.5 || dist > 18.0) return; // Jangan gambar jika < 0.5m (terlalu dekat) atau > 18m
 
     final projected = projector.projectPoint(
       point: slotOffset,
@@ -208,9 +398,7 @@ class AROverlayPainter extends CustomPainter {
     if (projected == null || !projected.isVisibleOnScreen) return;
 
     final pos = projected.screenPosition;
-    // Pin melayang ~50 - 120 piksel di atas titik lantai tergantung kedalaman
     final elevation = (projected.scale * 0.8).clamp(35.0, 100.0);
-    // Sedikit efek melayang turun-naik (hovering bounce)
     final bounce = math.sin(animationValue * 2 * math.pi) * 6.0;
     final pinTop = Offset(pos.dx, pos.dy - elevation + bounce);
 
@@ -238,13 +426,11 @@ class AROverlayPainter extends CustomPainter {
     // 3. Pin Marker melayang dengan label slot
     final pinRadius = (projected.scale * 0.28).clamp(16.0, 32.0);
 
-    // Shadow pin
     final pinShadowPaint = Paint()
       ..color = const Color(0x66000000)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
     canvas.drawCircle(pinTop.translate(0, 3), pinRadius, pinShadowPaint);
 
-    // Lingkaran badan pin (Kuning keemasan / Cyan cerah)
     final pinPaint = Paint()
       ..shader = const RadialGradient(
         colors: [Color(0xFFFFD600), Color(0xFFFF9100)],
@@ -257,7 +443,6 @@ class AROverlayPainter extends CustomPainter {
       ..strokeWidth = 2.5;
     canvas.drawCircle(pinTop, pinRadius, pinBorder);
 
-    // Label slot di dalam pin
     final textPainter = TextPainter(
       text: TextSpan(
         text: targetSlot!.id,
@@ -288,8 +473,14 @@ class AROverlayPainter extends CustomPainter {
   ) {
     if (waypoints.length < 2) return;
 
-    // Ambil waypoint rute berikutnya (~3 meter ke depan)
-    final nextTarget = waypoints.length > 2 ? waypoints[2] : waypoints[1];
+    // Ambil waypoint rute berikutnya di depan pengguna
+    Offset nextTarget = waypoints[1];
+    for (int i = 1; i < waypoints.length; i++) {
+      if ((waypoints[i] - userOffset).distance >= 0.8) {
+        nextTarget = waypoints[i];
+        break;
+      }
+    }
 
     final projected = projector.projectPoint(
       point: nextTarget,
@@ -299,23 +490,23 @@ class AROverlayPainter extends CustomPainter {
       screenSize: size,
     );
 
-    // Jika waypoint di depan terlihat jelas di dalam layar, tidak perlu peringatan tepi
-    if (projected != null && projected.isVisibleOnScreen) {
-      return;
-    }
-
-    // Dapatkan panduan arah belok
+    // Dapatkan panduan arah belok dari satu sumber kebenaran yang sama (ambang lurus +-20 derajat)
     final guidance = ARProjector.getOffScreenGuidance(
       userPos: userOffset,
       userHeadingDeg: mapHeadingDeg,
       targetPoint: nextTarget,
     );
 
+    // Jika arah lurus, penunjuk tepi tidak perlu ditampilkan
     if (guidance.direction == TurnDirection.straight) {
       return;
     }
 
-    // Tentukan posisi indikator tepi layar
+    // Jika waypoint di depan terlihat jelas di dalam layar (dan bukan putar balik), tidak perlu peringatan tepi
+    if (projected != null && projected.isVisibleOnScreen && guidance.direction != TurnDirection.uTurn) {
+      return;
+    }
+
     final isLeft = guidance.direction == TurnDirection.left ||
         guidance.direction == TurnDirection.slightLeft;
     final isRight = guidance.direction == TurnDirection.right ||
@@ -323,20 +514,23 @@ class AROverlayPainter extends CustomPainter {
     final isUTurn = guidance.direction == TurnDirection.uTurn;
 
     final indicatorY = size.height * 0.45;
+    final pillWidth = isUTurn ? 140.0 : 130.0;
+    final halfW = pillWidth / 2.0;
+
     final indicatorX = isLeft
-        ? 36.0
+        ? (halfW + 16.0)
         : isRight
-            ? size.width - 36.0
-            : size.width / 2.0;
+            ? (size.width - halfW - 16.0)
+            : (size.width / 2.0);
 
     final targetOffset = isUTurn
-        ? Offset(indicatorX, size.height * 0.75)
+        ? Offset(indicatorX, size.height * 0.55)
         : Offset(indicatorX, indicatorY);
 
     _drawEdgeArrow(canvas, targetOffset, guidance, isLeft, isRight, isUTurn);
   }
 
-  /// Menggambar widget panah besar berdenyut di tepi layar
+  /// Menggambar widget panah berdenyut di tepi layar
   void _drawEdgeArrow(
     Canvas canvas,
     Offset position,
@@ -345,17 +539,16 @@ class AROverlayPainter extends CustomPainter {
     bool isRight,
     bool isUTurn,
   ) {
-    final pulseScale = 1.0 + 0.15 * math.sin(animationValue * 2 * math.pi);
+    final pulseScale = 1.0 + 0.12 * math.sin(animationValue * 2 * math.pi);
 
     canvas.save();
     canvas.translate(position.dx, position.dy);
     canvas.scale(pulseScale);
 
-    // Background pill gelap modern
     final pillRect = Rect.fromCenter(
       center: Offset.zero,
-      width: isUTurn ? 140 : 120,
-      height: 48,
+      width: isUTurn ? 140 : 124,
+      height: 44,
     );
     final pillPaint = Paint()
       ..color = const Color(0xE61E222D)
@@ -366,15 +559,14 @@ class AROverlayPainter extends CustomPainter {
       ..strokeWidth = 2.0;
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pillRect, const Radius.circular(24)),
+      RRect.fromRectAndRadius(pillRect, const Radius.circular(22)),
       pillPaint,
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pillRect, const Radius.circular(24)),
+      RRect.fromRectAndRadius(pillRect, const Radius.circular(22)),
       borderPaint,
     );
 
-    // Teks instruksi & panah
     final arrowText = isLeft
         ? '◀ ${guidance.label}'
         : isRight
@@ -406,6 +598,6 @@ class AROverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant AROverlayPainter oldDelegate) {
-    return true; // Direpaint sesuai tick animasi / sensor
+    return true;
   }
 }

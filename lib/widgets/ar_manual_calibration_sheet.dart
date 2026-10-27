@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/ar_sensor_service.dart';
 
@@ -71,48 +72,49 @@ class _ArManualCalibrationSheetState extends State<ArManualCalibrationSheet> {
           ),
           const SizedBox(height: 16),
 
-          // 1. Toggle Mode: Simulasi vs Dead Reckoning
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A2E3D),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Mode Simulasi Posisi',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+          // 1. Toggle Mode: Simulasi vs Dead Reckoning (Hanya muncul di kDebugMode)
+          if (kDebugMode) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A2E3D),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Mode Simulasi Posisi',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    Text(
-                      _isSimulation
-                          ? 'Posisi bergerak otomatis dari controller'
-                          : 'Posisi bergerak dari deteksi langkah kaki (Dead Reckoning)',
-                      style: const TextStyle(color: Colors.white54, fontSize: 11),
-                    ),
-                  ],
-                ),
-                Switch(
-                  value: _isSimulation,
-                  activeThumbColor: const Color(0xFF00FF88),
-                  onChanged: (val) {
-                    setState(() => _isSimulation = val);
-                    widget.sensorService.setSimulationMode(val);
-                  },
-                ),
-              ],
+                      Text(
+                        _isSimulation
+                            ? 'Posisi bergerak otomatis dari controller'
+                            : 'Posisi bergerak dari deteksi langkah kaki (Dead Reckoning)',
+                        style: const TextStyle(color: Colors.white54, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                  Switch(
+                    value: _isSimulation,
+                    activeThumbColor: const Color(0xFF00FF88),
+                    onChanged: (val) {
+                      setState(() => _isSimulation = val);
+                      widget.sensorService.setSimulationMode(val);
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
+          ],
 
           // 2. Slider Offset Heading Kompas
           Container(
