@@ -78,8 +78,8 @@
         },
         {
           "id": "n10",
-          "name": "persimpangan dapur dan ruang kerja tengah",
-          "type": "junction",
+          "name": "pintu ruang tengah",
+          "type": "entrance",
           "x": 23.5,
           "y": 18
         },
@@ -148,10 +148,10 @@
         },
         {
           "id": "n23",
-          "name": "persimpangan dapur dan ruang kerja tengah",
-          "type": "junction",
+          "name": "pintu dapur",
+          "type": "entrance",
           "x": 24.5,
-          "y": 17.8
+          "y": 18
         }
       ],
       "edges": [
@@ -267,15 +267,15 @@
           "id": "e25",
           "from": "n5",
           "to": "n23",
-          "distance": 0.539
+          "distance": 0.5
         },
         {
           "id": "e26",
           "from": "n6",
           "to": "n23",
-          "distance": 2.3
+          "distance": 2.5
         }
       ]
     }
   ]
-} 
+}

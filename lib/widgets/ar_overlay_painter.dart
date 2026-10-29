@@ -64,11 +64,11 @@ class AROverlayPainter extends CustomPainter {
       ...currentRoute.map((n) => Offset(n.x, n.y)),
     ];
 
-    // 1 & 2. Interpolasi rute: dapatkan titik-titik koordinat baru setiap interval 1.5 meter
+    // 1 & 2. Interpolasi rute kurva halus (Chaikin): interval rapat 0.8 meter
     final routePoints = _interpolateRoutePoints(
       userOffset,
       currentRoute,
-      interval: 1.5,
+      interval: 0.8,
       maxDistance: 15.0,
     );
 
@@ -86,8 +86,8 @@ class AROverlayPainter extends CustomPainter {
       );
     }
 
-    // Gambar rentetan chevron (V terbalik) terpisah dengan efek Neon 2-Layer di lantai
-    _drawChevrons(canvas, size, projectedList);
+    // Gambar rentetan double-chevron (>>) neon yang mengikuti kurva halus
+    _drawChevronRibbon(canvas, size, projectedList);
 
     // 4. Gambar Panah Penuntun Utama 3D Besar di Tengah Bawah Layar
     _drawMainGuidingArrow(canvas, size);
@@ -96,32 +96,61 @@ class AROverlayPainter extends CustomPainter {
     _drawOffScreenIndicatorIfNeeded(canvas, size, userOffset, waypoints);
   }
 
-  /// Menelusuri total panjang rute dan menghasilkan titik-titik koordinat dengan interval jarak tetap (1.5 m)
+  /// Menghaluskan titik-titik belokan rute (corner rounding) menggunakan Chaikin's Algorithm.
+  /// Memotong sudut tajam 90° menjadi lengkungan kurva halus yang natural seperti rute game/Geodux.
+  List<Offset> _smoothPathChaikin(List<Offset> points, {int iterations = 3}) {
+    if (points.length < 3) return points;
+
+    List<Offset> current = List<Offset>.from(points);
+    for (int it = 0; it < iterations; it++) {
+      final smoothed = <Offset>[current.first];
+      for (int i = 0; i < current.length - 1; i++) {
+        final p0 = current[i];
+        final p1 = current[i + 1];
+
+        // Titik Q (25% dari p0 ke p1) dan R (75% dari p0 ke p1)
+        final q = Offset(0.75 * p0.dx + 0.25 * p1.dx, 0.75 * p0.dy + 0.25 * p1.dy);
+        final r = Offset(0.25 * p0.dx + 0.75 * p1.dx, 0.25 * p0.dy + 0.75 * p1.dy);
+
+        smoothed.add(q);
+        smoothed.add(r);
+      }
+      smoothed.add(current.last);
+      current = smoothed;
+    }
+    return current;
+  }
+
+  /// Menelusuri total panjang rute kurva yang telah dihaluskan (Chaikin)
+  /// dan menghasilkan titik-titik koordinat dengan interval jarak tetap (spacing rapat 0.8 m)
   List<Offset> _interpolateRoutePoints(
     Offset startPos,
     List<Node> route, {
-    double interval = 1.5,
+    double interval = 0.8,
     double maxDistance = 15.0,
   }) {
     if (route.isEmpty) return [];
 
-    final waypoints = <Offset>[
+    final rawWaypoints = <Offset>[
       startPos,
       ...route.map((n) => Offset(n.x, n.y)),
     ];
 
+    // Terapkan penghalusan Chaikin pada waypoints asli
+    final smoothWaypoints = _smoothPathChaikin(rawWaypoints, iterations: 3);
+
     final sampledPoints = <Offset>[];
     double accumulatedDist = 0.0;
-    double nextTargetDist = interval; // Titik pertama dimulai 1.5 meter di depan user
+    double nextTargetDist = 0.6; // Titik pertama dimulai 0.6 m di depan user
 
-    for (int i = 0; i < waypoints.length - 1; i++) {
-      final p1 = waypoints[i];
-      final p2 = waypoints[i + 1];
+    for (int i = 0; i < smoothWaypoints.length - 1; i++) {
+      final p1 = smoothWaypoints[i];
+      final p2 = smoothWaypoints[i + 1];
       final segDx = p2.dx - p1.dx;
       final segDy = p2.dy - p1.dy;
       final segLen = math.sqrt(segDx * segDx + segDy * segDy);
 
-      if (segLen <= 0.001) continue;
+      if (segLen <= 0.0001) continue;
 
       final segStartDist = accumulatedDist;
       final segEndDist = accumulatedDist + segLen;
@@ -141,74 +170,253 @@ class AROverlayPainter extends CustomPainter {
     return sampledPoints;
   }
 
-  /// Menggambar rentetan chevron (V terbalik) terpisah bercahaya neon (Glow + Core) di lantai
-  void _drawChevrons(Canvas canvas, Size size, List<ProjectedPoint?> projectedList) {
-    if (projectedList.isEmpty) return;
+  // ─────────────────────────────────────────────────────────────────────────
+  // HELPER: Catmull-Rom Spline – menghaluskan titik-titik screen space
+  // menjadi kurva berkesinambungan dengan N segmen per pasangan titik kontrol.
+  // ─────────────────────────────────────────────────────────────────────────
+  List<Offset> _catmullRomSpline(
+    List<Offset> points, {
+    int samplesPerSegment = 12,
+  }) {
+    if (points.length < 2) return List<Offset>.from(points);
 
-    const double maxLookahead = 15.0;
+    final result = <Offset>[];
 
-    for (int i = 0; i < projectedList.length; i++) {
-      final pCurrent = projectedList[i];
-      if (pCurrent == null || !pCurrent.isVisibleOnScreen) continue;
+    // Duplikasi titik pertama & terakhir sebagai phantom control points
+    final pts = <Offset>[
+      points.first,
+      ...points,
+      points.last,
+    ];
 
-      // Skalakan ukuran, ketebalan, dan opasitas berdasarkan properti depth
-      final double depth = pCurrent.depth;
-      final double depthScale = (1.0 / math.max(depth, 1.0)).clamp(0.1, 1.0);
-      final double opacity = (1.0 - (depth / maxLookahead)).clamp(0.15, 1.0);
+    for (int i = 1; i < pts.length - 2; i++) {
+      final p0 = pts[i - 1];
+      final p1 = pts[i];
+      final p2 = pts[i + 1];
+      final p3 = pts[i + 2];
 
-      final double armWidth = 52.0 * depthScale;
-      final double armLength = 28.0 * depthScale;
+      for (int s = 0; s <= samplesPerSegment; s++) {
+        final t = s / samplesPerSegment;
+        final t2 = t * t;
+        final t3 = t2 * t;
 
-      // Layer 1 (Glow): Garis tebal dengan MaskFilter blur untuk pancaran cahaya neon
-      final glowPaint = Paint()
-        ..color = Colors.cyanAccent.withValues(alpha: opacity * 0.75)
-        ..strokeWidth = (10.0 * depthScale).clamp(3.0, 10.0)
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
+        // Formula Catmull-Rom standar (alpha = 0.5)
+        final dx = 0.5 *
+            ((2.0 * p1.dx) +
+                (-p0.dx + p2.dx) * t +
+                (2.0 * p0.dx - 5.0 * p1.dx + 4.0 * p2.dx - p3.dx) * t2 +
+                (-p0.dx + 3.0 * p1.dx - 3.0 * p2.dx + p3.dx) * t3);
+        final dy = 0.5 *
+            ((2.0 * p1.dy) +
+                (-p0.dy + p2.dy) * t +
+                (2.0 * p0.dy - 5.0 * p1.dy + 4.0 * p2.dy - p3.dy) * t2 +
+                (-p0.dy + 3.0 * p1.dy - 3.0 * p2.dy + p3.dy) * t3);
 
-      // Layer 2 (Core): Garis tipis tanpa blur di tengah untuk inti neon putih-cyan yang tajam
-      final corePaint = Paint()
-        ..color = Colors.white.withValues(alpha: opacity)
-        ..strokeWidth = (3.2 * depthScale).clamp(1.2, 3.2)
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..style = PaintingStyle.stroke;
+        result.add(Offset(dx, dy));
+      }
+    }
+    return result;
+  }
 
-      // Hitung orientasi rotasi chevron menghadap searah jalur rute berikutnya
-      double angle;
-      if (i < projectedList.length - 1 && projectedList[i + 1] != null) {
-        final nextPos = projectedList[i + 1]!.screenPosition;
-        final dx = nextPos.dx - pCurrent.screenPosition.dx;
-        final dy = nextPos.dy - pCurrent.screenPosition.dy;
-        angle = math.atan2(dy, dx);
-      } else if (i > 0 && projectedList[i - 1] != null) {
-        final prevPos = projectedList[i - 1]!.screenPosition;
-        final dx = pCurrent.screenPosition.dx - prevPos.dx;
-        final dy = pCurrent.screenPosition.dy - prevPos.dy;
-        angle = math.atan2(dy, dx);
-      } else {
-        angle = -math.pi / 2.0; // Default menghadap ke depan layar
+  // ─────────────────────────────────────────────────────────────────────────
+  // HELPER: Ambil titik-titik berjarak piksel merata (arc-length parameterization)
+  // di sepanjang kurva yang sudah di-spline. Hasilnya adalah list of (position, angle).
+  // ─────────────────────────────────────────────────────────────────────────
+  List<({Offset position, double angle})> _sampleEvenlySpacedPoints(
+    List<Offset> curvePoints, {
+    double spacingPx = 38.0,
+    double startOffsetPx = 20.0,
+  }) {
+    final samples = <({Offset position, double angle})>[];
+    if (curvePoints.length < 2) return samples;
+
+    double accumulated = 0.0;
+    double nextTarget = startOffsetPx;
+
+    for (int i = 0; i < curvePoints.length - 1; i++) {
+      final a = curvePoints[i];
+      final b = curvePoints[i + 1];
+      final segDx = b.dx - a.dx;
+      final segDy = b.dy - a.dy;
+      final segLen = math.sqrt(segDx * segDx + segDy * segDy);
+      if (segLen < 0.001) continue;
+
+      final segStart = accumulated;
+      final segEnd = accumulated + segLen;
+
+      while (nextTarget <= segEnd) {
+        final t = (nextTarget - segStart) / segLen;
+        final pos = Offset(a.dx + segDx * t, a.dy + segDy * t);
+        final angle = math.atan2(segDy, segDx);
+        samples.add((position: pos, angle: angle));
+        nextTarget += spacingPx;
       }
 
-      canvas.save();
-      canvas.translate(pCurrent.screenPosition.dx, pCurrent.screenPosition.dy);
-      canvas.rotate(angle);
+      accumulated = segEnd;
+    }
+    return samples;
+  }
 
-      // Bentuk 1 buah Chevron (V terbalik menghadap arah jalur)
-      final chevronPath = Path()
-        ..moveTo(-armLength, -armWidth / 2.0)
-        ..lineTo(0, 0) // Ujung depan (tip)
-        ..lineTo(-armLength, armWidth / 2.0);
+  // ─────────────────────────────────────────────────────────────────────────
+  // HELPER: Gambar SATU set double-chevron (>>) di titik [center] dengan
+  // rotasi [angle]. Ukuran & opacity disesuaikan oleh [depthRatio] (0=dekat, 1=jauh).
+  // ─────────────────────────────────────────────────────────────────────────
+  void _drawDoubleChevron(
+    Canvas canvas,
+    Offset center,
+    double angle, {
+    required double depthRatio,
+    required double animPhase, // 0..1 untuk animasi pulse gerak
+  }) {
+    // Depth-based scaling & opacity (dekat → besar & terang, jauh → kecil & redup)
+    final double depthScale = (1.0 - depthRatio * 0.78).clamp(0.15, 1.0);
+    final double opacity    = (1.0 - depthRatio * 0.82).clamp(0.12, 1.0);
 
-      // Render Layer 1: Glow neon tebal
-      canvas.drawPath(chevronPath, glowPaint);
+    // Ukuran satu pangkat (V tunggal) dalam koordinat lokal (menghadap +X saat angle=0)
+    final double hw = 9.0 * depthScale;   // setengah-tinggi (half-height) >> atas/bawah
+    final double vLen = 12.0 * depthScale; // panjang horizontal tiap V
+    final double gap  =  7.0 * depthScale; // jarak antar V pertama & V kedua
 
-      // Render Layer 2: Core neon tipis & tajam
-      canvas.drawPath(chevronPath, corePaint);
+    // ── Definisikan path untuk SATU V (chevron tunggal, menghadap kanan)
+    // Koordinat lokal: tip di (vLen, 0), sayap kiri-atas di (0, -hw), sayap kiri-bawah di (0, hw)
+    Path makeVPath(double offsetX) {
+      return Path()
+        ..moveTo(offsetX,        -hw)  // sayap atas (mundur)
+        ..lineTo(offsetX + vLen,   0)  // ujung lancip
+        ..lineTo(offsetX,         hw)  // sayap bawah (mundur)
+        // jangan close() – biarkan open stroke agar terlihat seperti >>
+        ;
+    }
 
-      canvas.restore();
+    // Dua V berjajar: V pertama di x=0, V kedua di x=gap
+    final v1 = makeVPath(0.0);
+    final v2 = makeVPath(gap);
+
+    // Bounding rect untuk gradient shader (mencakup kedua V)
+    final rect = Rect.fromLTWH(-2.0, -hw - 2.0, vLen + gap + 4.0, hw * 2.0 + 4.0);
+    // Offset seluruh gambar agar pusat chevron di origin (bukan kiri)
+    final shiftX = -(vLen + gap) / 2.0;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+    canvas.translate(shiftX, 0.0); // tengahkan secara horizontal
+
+    // ── Layer 1: OUTER GLOW (blur lebar, cyan terang)
+    final glowPaint = Paint()
+      ..color = const Color(0xFF00E5FF).withValues(alpha: opacity * 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (6.5 * depthScale).clamp(2.0, 6.5)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, (8.0 * depthScale).clamp(2.5, 8.0));
+    canvas.drawPath(v1, glowPaint);
+    canvas.drawPath(v2, glowPaint);
+
+    // ── Layer 2: MID GLOW (medium blur, warna neon solid)
+    final midGlowPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          const Color(0xFF00B0FF).withValues(alpha: opacity * 0.80),
+          const Color(0xFF00FFFF).withValues(alpha: opacity * 0.95),
+        ],
+      ).createShader(rect)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (3.5 * depthScale).clamp(1.2, 3.5)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, (3.5 * depthScale).clamp(1.0, 3.5));
+    canvas.drawPath(v1, midGlowPaint);
+    canvas.drawPath(v2, midGlowPaint);
+
+    // ── Layer 3: CORE (garis tipis putih cemerlang tanpa blur)
+    final corePaint = Paint()
+      ..color = Colors.white.withValues(alpha: opacity * 0.92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (1.6 * depthScale).clamp(0.5, 1.6)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(v1, corePaint);
+    canvas.drawPath(v2, corePaint);
+
+    canvas.restore();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MAIN: Render jalur double-chevron (>>) neon yang mengikuti kurva halus.
+  //
+  // Pipeline:
+  //   1. Ekstrak titik screen yang valid dari projectedList
+  //   2. Haluskan dengan Catmull-Rom Spline (screen-space)
+  //   3. Sample titik berjarak merata (even spacing)
+  //   4. Gambar double-chevron (>>) di setiap titik sample dengan rotasi tangent
+  // ─────────────────────────────────────────────────────────────────────────
+  void _drawChevronRibbon(Canvas canvas, Size size, List<ProjectedPoint?> projectedList) {
+    if (projectedList.isEmpty) return;
+
+    const double maxDepth = 15.0;
+
+    // ── STEP 1: Kumpulkan titik screen yang valid & dalam batas layar
+    final validPoints = <({Offset screenPos, double depth})>[];
+    for (final pp in projectedList) {
+      if (pp == null || !pp.isVisibleOnScreen) continue;
+      // Filter titik yang terlalu rendah (sangat dekat, di bawah horizon)
+      if (pp.screenPosition.dy > size.height * 0.94) continue;
+      // Filter titik yang di atas layar (di balik kamera)
+      if (pp.screenPosition.dy < 0) continue;
+      validPoints.add((screenPos: pp.screenPosition, depth: pp.depth));
+    }
+    if (validPoints.length < 2) return;
+
+    // ── STEP 2: Catmull-Rom Spline pada koordinat screen
+    final rawScreenPts = validPoints.map((v) => v.screenPos).toList();
+    final smoothCurve = _catmullRomSpline(rawScreenPts, samplesPerSegment: 10);
+    if (smoothCurve.length < 2) return;
+
+    // ── STEP 3: Sample berjarak merata di sepanjang kurva halus
+    //   Spacing dalam piksel: ~36px (terasa proporsional di semua ukuran layar)
+    final spacingPx = (size.width * 0.09).clamp(28.0, 46.0);
+    final chevronSamples = _sampleEvenlySpacedPoints(
+      smoothCurve,
+      spacingPx: spacingPx,
+      startOffsetPx: spacingPx * 0.5,
+    );
+    if (chevronSamples.isEmpty) return;
+
+    // ── STEP 4: Gambar dari TERJAUH ke TERDEKAT (painter's algorithm)
+    // Perlu memetakan posisi sample ke depth dari validPoints terdekat
+    for (int si = chevronSamples.length - 1; si >= 0; si--) {
+      final sample = chevronSamples[si];
+      final pos = sample.position;
+      final angle = sample.angle;
+
+      // Interpolasi depth: cari validPoint terdekat dari posisi sample
+      double bestDepth = maxDepth;
+      double bestDist2 = double.infinity;
+      for (final vp in validPoints) {
+        final ddx = vp.screenPos.dx - pos.dx;
+        final ddy = vp.screenPos.dy - pos.dy;
+        final dist2 = ddx * ddx + ddy * ddy;
+        if (dist2 < bestDist2) {
+          bestDist2 = dist2;
+          bestDepth = vp.depth;
+        }
+      }
+      final depthRatio = (bestDepth / maxDepth).clamp(0.0, 1.0);
+
+      // Fase animasi bergerak: chevron terdekat bergerak maju (pulse gerak)
+      // Menggunakan si (index) + animationValue untuk efek "aliran"
+      final animPhase = ((animationValue + si * 0.08) % 1.0);
+
+      _drawDoubleChevron(
+        canvas,
+        pos,
+        angle,
+        depthRatio: depthRatio,
+        animPhase: animPhase,
+      );
     }
   }
 

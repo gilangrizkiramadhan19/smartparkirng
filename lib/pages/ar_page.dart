@@ -52,6 +52,10 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
   double _calibrationOffsetCorrection = 0.0; // Koreksi manual ±180° setelah kalibrasi
   double _baseCalibrationOffset = 0.0;        // Offset murni dari sensor, sebelum koreksi slider
 
+  // Debounce Peringatan "Putar Balik" (2.5 detik) untuk menangkal interferensi magnetik
+  DateTime? _uTurnStartTime;
+  Map<String, dynamic>? _lastNonUTurnInstruction;
+
   @override
   void initState() {
     super.initState();
@@ -356,16 +360,14 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
     });
   }
 
-  /// Menentukan titik target rute berikutnya yang berjarak minimal 0.8 meter di depan user
   Offset? _getNextRoutePoint(Offset userPos, List<Node> route) {
     if (route.isEmpty) return null;
-    for (int i = 0; i < route.length; i++) {
-      final pt = Offset(route[i].x, route[i].y);
-      if ((pt - userPos).distance >= 0.8) {
-        return pt;
-      }
+    if (route.length == 1) {
+      return Offset(route.first.x, route.first.y);
     }
-    return Offset(route.last.x, route.last.y);
+    // Langsung arahkan panah ke segmen berikutnya (route[1]) tanpa memotong jalan!
+    // Ini memastikan panah selalu siku-siku mengikuti lorong dan pintu.
+    return Offset(route[1].x, route[1].y);
   }
 
   /// Memperhalus sudut rotasi relatif menggunakan shortest-path Angular Lerp
@@ -451,6 +453,33 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
       targetPoint: nextTarget,
     );
 
+    // 2. Debounce Peringatan "Putar Balik" (2.5 detik):
+    // Tahan instruksi Putar Balik jika hanya terjadi lonjakan sesaat akibat interferensi magnetik (kulkas/kompor logam).
+    bool isUTurnDebounced = false;
+    if (guidance.direction == TurnDirection.uTurn) {
+      _uTurnStartTime ??= DateTime.now();
+      final elapsedMs = DateTime.now().difference(_uTurnStartTime!).inMilliseconds;
+      if (elapsedMs >= 2500) {
+        isUTurnDebounced = true;
+      }
+    } else {
+      _uTurnStartTime = null;
+    }
+
+    // Jika guidance menyuruh Putar Balik tapi belum konsisten > 2.5 detik berturut-turut,
+    // tahan dulu dan kembalikan instruksi sebelumnya atau fallback ke "Lurus".
+    if (guidance.direction == TurnDirection.uTurn && !isUTurnDebounced) {
+      if (_lastNonUTurnInstruction != null) {
+        return _lastNonUTurnInstruction!;
+      }
+      return {
+        'icon': Icons.straight,
+        'title': 'Lurus Mengikuti Rute',
+        'subtitle': 'Jarak sisa: ${widget.controller.currentRouteDistance.toStringAsFixed(1)} m menuju $destName',
+        'direction': TurnDirection.straight,
+      };
+    }
+
     final distToNextTurn = _calculateDistanceToNextTurn(userOffset, route);
 
     IconData icon;
@@ -499,12 +528,18 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
         ? 'Belokan dalam ${distToNextTurn.toStringAsFixed(1)} m • Sisa: ${totalRemaining.toStringAsFixed(1)} m'
         : 'Jarak sisa: ${totalRemaining.toStringAsFixed(1)} m menuju $destName';
 
-    return {
+    final result = {
       'icon': icon,
       'title': title,
       'subtitle': subtitle,
       'direction': guidance.direction,
     };
+
+    if (guidance.direction != TurnDirection.uTurn) {
+      _lastNonUTurnInstruction = result;
+    }
+
+    return result;
   }
 
   /// Mendapatkan daftar node tetangga non-junction dari [nodeId] di graf.

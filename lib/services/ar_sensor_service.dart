@@ -213,24 +213,17 @@ class ARSensorService extends ChangeNotifier {
 
   /// True jika menggunakan kompas standar/flat (tanpa orientasi kamera remapped)
   bool get isUsingFallbackCompass => !_hasCameraHeading;
-  String get headingSourceLabel => (_devicePitchDeg >= 45.0 && _hasCameraHeading)
-      ? 'RotVector (Cam)'
-      : 'RotVector (Flat)';
+  String get headingSourceLabel {
+    return 'flutter_compass';
+  }
+
+  double get preferredHeading {
+    return compassHeadingFlutterCompass;
+  }
 
   double get filteredCompassHeading => _filteredCompassHeading;
   double get rawHeadingFlat => _rawCompassHeading;
   double? get rawHeadingCamera => _hasCameraHeading ? _cameraHeadingDeg : null;
-
-  /// Heading terpilih yang dipakai kalibrasi & navigasi:
-  /// Otomatis tilt-compensated melalui TYPE_ROTATION_VECTOR.
-  /// Saat HP tegak (pitch >= 45° / mode AR kamera), menggunakan headingForCameraMode.
-  /// Saat HP datar, menggunakan heading standar.
-  double get preferredHeading {
-    if (_hasCameraHeading && _devicePitchDeg >= 45.0) {
-      return _filteredCameraHeading;
-    }
-    return _filteredCompassHeading;
-  }
 
   /// Tidak ada mismatch karena kedua heading bersumber dari rotation vector yang konsisten.
   bool get headingMismatchWarning => false;
@@ -276,15 +269,9 @@ class ARSensorService extends ChangeNotifier {
   int get rejectedAmplitudeCount => _rejectedAmplitudeCount;
   String get lastRejectReason => _lastRejectReason;
 
-  /// Arah hadap efektif pengguna terhadap sumbu koordinat denah (dalam derajat 0 - 360°).
   double get effectiveMapHeading {
-    if (_isSimulationMode && !_hasCompass) {
-      return controller.currentUserHeading ?? 0.0;
-    }
-    return ARProjector.compassToMapHeading(
-      preferredHeading,
-      _mapHeadingOffsetDeg,
-    );
+    final raw = (compassHeadingFlutterCompass + mapHeadingOffsetDeg) % 360.0;
+    return (raw + 360.0) % 360.0;
   }
 
   /// Memulai pendengaran sensor fisik HP saat service dibuat (ketika ArPage dibuka).
@@ -299,20 +286,10 @@ class ARSensorService extends ChangeNotifier {
           _lastCompassEventTime = now;
           _hasCompass = true;
 
-          // Heading datar / default
-          final heading = event.heading;
-          if (heading != null) {
-            _rawCompassHeading = ARProjector.normalizeAngleDeg(heading);
-            _filteredCompassHeading = _circularEma(_filteredCompassHeading, _rawCompassHeading, 0.2);
-          }
-
-          // Heading mode kamera (tilt-compensated untuk posisi HP tegak / mode AR)
-          final headingCam = event.headingForCameraMode ?? event.heading;
-          if (headingCam != null) {
-            _cameraHeadingDeg = ARProjector.normalizeAngleDeg(headingCam);
-            _filteredCameraHeading = _circularEma(_filteredCameraHeading, _cameraHeadingDeg!, 0.2);
-            _hasCameraHeading = true;
-          }
+          // Gunakan event.heading standar, hardware menolak camera mode
+          double rawHeading = event.heading ?? 0.0;
+          _rawCompassHeading = (rawHeading % 360.0 + 360.0) % 360.0;
+          _filteredCompassHeading = _circularEma(_filteredCompassHeading, _rawCompassHeading, 0.2);
 
           _requestThrottleRepaint();
         },
@@ -611,12 +588,12 @@ class ARSensorService extends ChangeNotifier {
     final layout = controller.layout;
     if (currentPos == null || layout == null) return;
 
-    final headingRad = effectiveMapHeading * math.pi / 180.0;
-    final dx = _stepLengthMeters * math.cos(headingRad);
-    final dy = _stepLengthMeters * math.sin(headingRad);
+    // Gunakan kompas murni terlepas dari status navigasi (Free-roam)
+    final stepAngleRad = effectiveMapHeading * math.pi / 180.0;
+    final dx = _stepLengthMeters * math.cos(stepAngleRad);
+    final dy = _stepLengthMeters * math.sin(stepAngleRad);
 
     final newRawPos = Offset(currentPos.x + dx, currentPos.y + dy);
-
     controller.setManualPosition(newRawPos, headingDeg: effectiveMapHeading);
     notifyListeners();
   }
@@ -645,11 +622,10 @@ class ARSensorService extends ChangeNotifier {
     }
 
     if (headingOnMap != null) {
-      // Kalibrasi: offset = heading sensor saat ini - bearing target di denah.
-      // Tidak ada koreksi +180° di sini; tanda sensor dan denah sudah selaras.
-      _mapHeadingOffsetDeg = ARProjector.normalizeAngleDeg(
-        preferredHeading - headingOnMap,
-      );
+      // Kalibrasi: offset = bearing target di denah - heading sensor saat ini.
+      double offset = (headingOnMap - preferredHeading) % 360.0;
+      if (offset < 0) offset += 360.0;
+      _mapHeadingOffsetDeg = offset;
     }
 
     _stepCount = 0;
@@ -688,14 +664,10 @@ class ARSensorService extends ChangeNotifier {
     required Offset referencePoint,
     double? compassHeadingOverride,
   }) {
-    final bearingMap = ARProjector.calculateBearingDeg(startPoint, referencePoint);
-    final rawHeading = compassHeadingOverride ?? preferredHeading;
-    // Tidak ada koreksi +180° — heading sensor langsung dibandingkan bearing denah.
-    // Offset = heading sensor - bearing denah: saat kamera diarahkan ke referencePoint,
-    // effectiveMapHeading akan == bearingMap.
-    _mapHeadingOffsetDeg = ARProjector.normalizeAngleDeg(
-      rawHeading - bearingMap,
-    );
+    final targetBearing = ARProjector.calculateBearingDeg(startPoint, referencePoint);
+    final compassHeading = compassHeadingOverride ?? preferredHeading;
+    double offset = (targetBearing - compassHeading) % 360.0;
+    _mapHeadingOffsetDeg = (offset + 360.0) % 360.0;
     _isCalibrated = true;
     notifyListeners();
   }

@@ -12,6 +12,8 @@ import 'map_repository.dart';
 import 'parking_repository.dart';
 import 'position_provider.dart';
 
+
+
 /// Mode penyedia posisi navigasi.
 enum NavigationPositionMode {
   simulation,
@@ -495,10 +497,14 @@ class NavigationController extends ChangeNotifier {
   /// Snap posisi [pt] ke segmen rute aktif saja (dalam radius wajar).
   Offset _snapToActiveRoute(Offset pt, List<Node> route) {
     if (route.length < 2) return pt;
+
+    // Selalu izinkan snap ke 1 segmen berikutnya agar blue dot tidak tertahan di pintu saat berbelok
+    final int maxSegment = 1;
+
     double minDistance = double.infinity;
     Offset bestProj = pt;
 
-    for (int i = 0; i < route.length - 1; i++) {
+    for (int i = 0; i <= maxSegment && i < route.length - 1; i++) {
       final a = Offset(route[i].x, route[i].y);
       final b = Offset(route[i + 1].x, route[i + 1].y);
       final dx = b.dx - a.dx;
@@ -651,14 +657,28 @@ class NavigationController extends ChangeNotifier {
     // HANYA dievaluasi saat navigasi benar-benar berjalan (tombol Mulai sudah ditekan).
     // Syarat tiba:
     // - sisa jarak sepanjang rute <= ambang
-    // - DAN user sudah menempuh minimal 80% panjang rute (indoor) / 50% (slot parkir)
+    // - DAN user sudah menempuh minimal 80% panjang rute (indoor umum) / 50% (slot parkir & room)
     // - DAN minimal 3 langkah terdeteksi sejak Mulai.
-    // Ambang ketat indoor:
-    // Untuk target destination (ruangan indoor): ambang maksimal 0.85 m (tidak tiba prematur saat masih 1.6m / 5 langkah lagi).
+    // Ambang kedatangan:
+    // Jika node tujuan (targetDestination) memiliki type == 'room', toleransi diperbesar (arrivalRadius 2.0 meter).
     // Untuk slot parkir: ambang hingga 1.5 m.
+    // Untuk node lainnya: ambang maksimal 0.85 m.
     if (_isNavigating && targetOffset != null) {
-      final maxThreshold = _targetSlot != null ? 1.5 : 0.85;
-      final arrivalThreshold = math.min(maxThreshold, math.max(0.4, _initialRouteDistance * 0.12));
+      final isRoom = _targetDestination != null && _targetDestination!.type == NodeType.room;
+      final double arrivalRadius;
+      
+      // 1. Radius untuk ruangan dicekik ekstrem (0.3m) agar wajib masuk ke tengah ruangan
+      if (isRoom) {
+        arrivalRadius = 0.3; 
+      } else if (_targetSlot != null) {
+        arrivalRadius = 1.5;
+      } else {
+        arrivalRadius = 0.85;
+      }
+
+      final arrivalThreshold = isRoom
+          ? arrivalRadius
+          : math.min(arrivalRadius, math.max(0.4, _initialRouteDistance * 0.12));
 
       if (_initialRouteDistance <= 1.0) {
         _statusBanner = 'Anda sudah dekat tujuan';
@@ -672,8 +692,11 @@ class NavigationController extends ChangeNotifier {
             _startNode!.id == _targetDestination!.id;
 
         final isWithinThreshold = remainingRouteDist <= arrivalThreshold || directDist <= arrivalThreshold;
-        final minProgressReq = _targetSlot != null ? 0.50 : 0.80;
+        
+        // 2. Progress minimal diubah jadi 0.90 untuk tipe room
+        final minProgressReq = (_targetSlot != null) ? 0.50 : (isRoom ? 0.90 : 0.80);
         final hasMinProgress = _routeProgress >= minProgressReq;
+        
         final hasMinSteps = (_positionMode == NavigationPositionMode.simulation || _targetSlot != null)
             ? true
             : (_stepsSinceStart >= 3);
@@ -727,8 +750,10 @@ class NavigationController extends ChangeNotifier {
     return (p - proj).distance;
   }
 
+  /// Menghitung ulang rute A* dari posisi pengguna saat ini.
   void _recalculateRouteFromCurrentPosition() {
     if (_currentUserPosition == null) return;
+
     if (_targetDestination != null) {
       final searchGraph = _buildEffectiveSearchGraph();
       final path = AStar.findPath(
@@ -737,19 +762,22 @@ class NavigationController extends ChangeNotifier {
         startNodeId: searchGraph.startNodeId,
         targetNodeId: _targetDestination!.id,
       );
+
       if (path != null && path.isNotEmpty) {
         _currentRoute = path;
         _currentRouteDistance = AStar.calculatePathLength(path);
         currentRouteNotifier.value = _currentRoute;
         routeDistanceNotifier.value = _currentRouteDistance;
         _isRerouting = false;
-        _statusBanner = 'Rute dihitung ulang (${_currentRouteDistance.toStringAsFixed(1)} m)';
+        _statusBanner =
+            'Rute dihitung ulang (${_currentRouteDistance.toStringAsFixed(1)} m)';
         if (_positionMode == NavigationPositionMode.simulation) {
           _positionProvider.onRouteChanged(
             _currentRoute.map((n) => Offset(n.x, n.y)).toList(),
           );
         }
         _updateTurnInstruction();
+        notifyListeners();
       }
     } else if (_targetSlot != null) {
       _calculateRouteToSlot(_targetSlot!);
@@ -815,42 +843,61 @@ class NavigationController extends ChangeNotifier {
 
   /// Memangkas rute yang sudah dilalui dan menyisakan rute di depan pengguna.
   void _trimRoute(Offset userPos) {
-    if (_currentRoute.length < 2) return;
+    if (_currentRoute.length <= 1) return;
+
+    // HAPUS syarat waypointRadius ketat yang bikin nyangkut.
+    // Selalu izinkan sistem mengevaluasi 1 segmen ke depan secara konstan.
+    // Jika user secara fisik sudah berbelok dan lebih dekat ke garis segmen berikutnya, rute akan otomatis terpotong (trim).
+    final int maxSegment = 1;
 
     int bestSegmentIndex = 0;
     double minDistance = double.infinity;
-    Offset bestProj = userPos;
+    Offset bestSnapped = userPos;
 
-    for (int i = 0; i < _currentRoute.length - 1; i++) {
+    for (int i = 0; i <= maxSegment && i < _currentRoute.length - 1; i++) {
       final a = Offset(_currentRoute[i].x, _currentRoute[i].y);
       final b = Offset(_currentRoute[i + 1].x, _currentRoute[i + 1].y);
       final dx = b.dx - a.dx;
       final dy = b.dy - a.dy;
       final lenSq = dx * dx + dy * dy;
 
-      Offset proj;
+      Offset snapped;
       if (lenSq == 0) {
-        proj = a;
+        snapped = a;
       } else {
         final t = (((userPos.dx - a.dx) * dx + (userPos.dy - a.dy) * dy) / lenSq).clamp(0.0, 1.0);
-        proj = Offset(a.dx + t * dx, a.dy + t * dy);
+        snapped = Offset(a.dx + t * dx, a.dy + t * dy);
       }
 
-      final dist = (userPos - proj).distance;
+      final dist = (userPos - snapped).distance;
       if (dist < minDistance) {
         minDistance = dist;
         bestSegmentIndex = i;
-        bestProj = proj;
+        bestSnapped = snapped;
       }
     }
 
-    final userNode = Node(id: 'user_pos', x: bestProj.dx, y: bestProj.dy);
-    final remainingNodes = _currentRoute.sublist(bestSegmentIndex + 1);
-
-    _currentRoute = [userNode, ...remainingNodes];
-    _currentRouteDistance = AStar.calculatePathLength(_currentRoute);
-    currentRouteNotifier.value = _currentRoute;
-    routeDistanceNotifier.value = _currentRouteDistance;
+    if (bestSegmentIndex > 0) {
+      final userNode = Node(
+        id: 'user_current',
+        x: bestSnapped.dx,
+        y: bestSnapped.dy,
+      );
+      final remainingNodes = _currentRoute.sublist(bestSegmentIndex + 1);
+      _currentRoute = [userNode, ...remainingNodes];
+      _currentRouteDistance = AStar.calculatePathLength(_currentRoute);
+      currentRouteNotifier.value = _currentRoute;
+      routeDistanceNotifier.value = _currentRouteDistance;
+      notifyListeners();
+    } else {
+      // Perbarui posisi user_pos pada segmen 0 jika masih berada di segmen awal
+      final userNode = Node(id: 'user_pos', x: bestSnapped.dx, y: bestSnapped.dy);
+      final remainingNodes = _currentRoute.sublist(1);
+      _currentRoute = [userNode, ...remainingNodes];
+      _currentRouteDistance = AStar.calculatePathLength(_currentRoute);
+      currentRouteNotifier.value = _currentRoute;
+      routeDistanceNotifier.value = _currentRouteDistance;
+    }
   }
 
   /// Membangun graf pencarian rute yang menghubungkan posisi pengguna saat ini
@@ -1078,12 +1125,14 @@ class NavigationController extends ChangeNotifier {
   /// Menghitung pratinjau rute A* ke node tujuan umum (tanpa langsung memulai navigasi).
   bool _previewRouteToDestination(MapNode destination) {
     final effectiveLayout = layout;
-    if (effectiveLayout == null || (_currentUserPosition == null && _startNode == null)) {
+    if (effectiveLayout == null ||
+        (_currentUserPosition == null && _startNode == null)) {
       return false;
     }
 
     if (_currentUserPosition == null && _startNode != null) {
-      _currentUserPosition = Node(id: _startNode!.id, x: _startNode!.x, y: _startNode!.y);
+      _currentUserPosition =
+          Node(id: _startNode!.id, x: _startNode!.x, y: _startNode!.y);
       userPositionNotifier.value = _currentUserPosition;
     }
 
@@ -1103,8 +1152,10 @@ class NavigationController extends ChangeNotifier {
       currentRouteNotifier.value = _currentRoute;
       routeDistanceNotifier.value = _currentRouteDistance;
       _isNavigating = false;
-      _statusBanner = 'Rute ke "${destination.name}" (${_currentRouteDistance.toStringAsFixed(1)} m). Tekan Mulai Navigasi.';
+      _statusBanner =
+          'Rute ke "${destination.name}" (${_currentRouteDistance.toStringAsFixed(1)} m). Tekan Mulai Navigasi.';
       _updateTurnInstruction();
+      notifyListeners();
       return true;
     } else {
       _currentRoute = [];
@@ -1114,6 +1165,7 @@ class NavigationController extends ChangeNotifier {
       _statusBanner = 'Tidak ada jalur ke "${destination.name}"';
       _currentInstruction = 'Tidak ada jalur';
       turnInstructionNotifier.value = _currentInstruction;
+      notifyListeners();
       return false;
     }
   }
@@ -1360,12 +1412,14 @@ class NavigationController extends ChangeNotifier {
       _currentRouteDistance = AStar.calculatePathLength(_currentRoute);
       currentRouteNotifier.value = _currentRoute;
       routeDistanceNotifier.value = _currentRouteDistance;
+      notifyListeners();
       return true;
     } else {
       _currentRoute = [];
       _currentRouteDistance = 0.0;
       currentRouteNotifier.value = [];
       routeDistanceNotifier.value = 0.0;
+      notifyListeners();
       return false;
     }
   }
