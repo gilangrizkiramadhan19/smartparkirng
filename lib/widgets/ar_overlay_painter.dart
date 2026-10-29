@@ -47,10 +47,11 @@ class AROverlayPainter extends CustomPainter {
       return;
     }
 
-    // Pin tujuan tetap digambar jika slot tujuan diset dan user mendekatinya
-    if (targetSlot != null) {
-      _drawDestinationPin(canvas, size, userOffset);
-    }
+    // Pin tujuan: selalu gambar di titik AKHIR rute (currentRoute.last),
+    // bukan dari targetSlot — agar selalu tampil selama ada rute aktif.
+    final destNode = currentRoute.last;
+    final destOffset = Offset(destNode.x, destNode.y);
+    _drawDestinationPin(canvas, size, userOffset, destOffset);
 
     // Panah dan chevron HANYA tampil setelah tombol "Mulai Navigasi" ditekan
     // DAN kalibrasi sensor telah selesai.
@@ -89,8 +90,8 @@ class AROverlayPainter extends CustomPainter {
     // Gambar rentetan double-chevron (>>) neon yang mengikuti kurva halus
     _drawChevronRibbon(canvas, size, projectedList);
 
-    // 4. Gambar Panah Penuntun Utama 3D Besar di Tengah Bawah Layar
-    _drawMainGuidingArrow(canvas, size);
+    // Panah radar 3D besar dinonaktifkan — UI cukup chevron lantai
+    // _drawMainGuidingArrow(canvas, size);
 
     // 5. Cek apakah rute berikutnya berada di luar layar, gambar indikator tepi
     _drawOffScreenIndicatorIfNeeded(canvas, size, userOffset, waypoints);
@@ -422,254 +423,195 @@ class AROverlayPainter extends CustomPainter {
 
 
 
-  /// Menggambar satu panah penuntun utama 3D besar di tengah-bawah layar (~70% tinggi layar)
-  /// yang berputar sebesar sudut relatif target terhadap arah hadap HP.
-  void _drawMainGuidingArrow(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2.0, size.height * 0.70);
-    final isUTurn = smoothedRelativeAngleDeg.abs() > 120.0;
-
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-
-    // 1. Cincin radar kompas futuristik berdenyut halus
-    final pulse = 1.0 + 0.05 * math.sin(animationValue * 2 * math.pi);
-    final ringRadius = 46.0 * pulse;
-
-    final discPaint = Paint()
-      ..color = const Color(0x880F1420)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset.zero, ringRadius, discPaint);
-
-    final glowRingPaint = Paint()
-      ..color = isUTurn ? const Color(0x44FF3D00) : const Color(0x3300FF88)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
-    canvas.drawCircle(Offset.zero, ringRadius, glowRingPaint);
-
-    final ringBorderPaint = Paint()
-      ..color = isUTurn ? const Color(0xAAFF5252) : const Color(0x8800E5FF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8;
-    canvas.drawCircle(Offset.zero, ringRadius, ringBorderPaint);
-
-    // Crosshair lembut di radar
-    final crossPaint = Paint()
-      ..color = Colors.white24
-      ..strokeWidth = 1.0;
-    canvas.drawLine(const Offset(-8, 0), const Offset(8, 0), crossPaint);
-    canvas.drawLine(const Offset(0, -8), const Offset(0, 8), crossPaint);
-
-    // 2. Rotasi panah sesuai sudut relatif (0° = menunjuk lurus ke atas / depan layar)
-    final rotRad = smoothedRelativeAngleDeg * math.pi / 180.0;
-    canvas.rotate(rotRad);
-
-    const arrowLength = 52.0;
-    const arrowWidth = 42.0;
-
-    // Bayangan glow di bawah panah
-    final shadowPath = _createMainArrowPath(arrowWidth * 1.15, arrowLength * 1.15);
-    final shadowPaint = Paint()
-      ..color = isUTurn ? const Color(0x66FF1744) : const Color(0x6600E5FF)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10.0)
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(shadowPath, shadowPaint);
-
-    // Belahan kiri panah 3D (highlight lebih terang)
-    final leftPath = _createMainArrowHalfPath(arrowWidth, arrowLength, isLeft: true);
-    final leftPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomLeft,
-        colors: isUTurn
-            ? [const Color(0xFFFF8A80), const Color(0xFFFF1744)]
-            : [const Color(0xFF00FFFF), const Color(0xFF00E676)],
-      ).createShader(Rect.fromLTWH(-arrowWidth / 2, -arrowLength * 0.6, arrowWidth / 2, arrowLength))
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(leftPath, leftPaint);
-
-    // Belahan kanan panah 3D (shading lebih gelap untuk efek beveled 3D)
-    final rightPath = _createMainArrowHalfPath(arrowWidth, arrowLength, isLeft: false);
-    final rightPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomRight,
-        colors: isUTurn
-            ? [const Color(0xFFFF5252), const Color(0xFFD50000)]
-            : [const Color(0xFF00B0FF), const Color(0xFF00BFA5)],
-      ).createShader(Rect.fromLTWH(0, -arrowLength * 0.6, arrowWidth / 2, arrowLength))
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(rightPath, rightPaint);
-
-    // Garis rim luar putih tajam
-    final fullPath = _createMainArrowPath(arrowWidth, arrowLength);
-    final outlinePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.95)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(fullPath, outlinePaint);
-
-    // Garis ridge tengah 3D
-    final ridgePaint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 1.5;
-    canvas.drawLine(
-      Offset(0, -arrowLength * 0.6),
-      Offset(0, arrowLength * 0.25),
-      ridgePaint,
-    );
-
-    canvas.restore();
-
-    // 3. Jika sudut relatif > 120°, tampilkan teks "Putar Balik"
-    if (isUTurn) {
-      _drawUTurnBadge(canvas, center.translate(0, 48));
-    }
-  }
-
-  /// Membuat jalur penuh panah penuntun 3D (menghadap ke ATAS pada orientasi 0)
-  Path _createMainArrowPath(double width, double length) {
-    final path = Path();
-    final halfW = width / 2.0;
-
-    path.moveTo(0, -length * 0.6); // Ujung panah atas
-    path.lineTo(-halfW, length * 0.4); // Sayap kiri
-    path.lineTo(0, length * 0.25); // Lekukan tengah belakang
-    path.lineTo(halfW, length * 0.4); // Sayap kanan
-    path.close();
-
-    return path;
-  }
-
-  /// Membuat separuh belahan panah penuntun 3D untuk efek pencahayaan berbeda
-  Path _createMainArrowHalfPath(double width, double length, {required bool isLeft}) {
-    final path = Path();
-    final xSign = isLeft ? -1.0 : 1.0;
-    final halfW = (width / 2.0) * xSign;
-
-    path.moveTo(0, -length * 0.6);
-    path.lineTo(halfW, length * 0.4);
-    path.lineTo(0, length * 0.25);
-    path.close();
-
-    return path;
-  }
-
-  /// Menggambar badge peringatan "Putar Balik"
-  void _drawUTurnBadge(Canvas canvas, Offset position) {
-    const pillW = 120.0;
-    const pillH = 30.0;
-    final rrect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: position, width: pillW, height: pillH),
-      const Radius.circular(15),
-    );
-    final bgPaint = Paint()
-      ..color = const Color(0xE6D50000)
-      ..style = PaintingStyle.fill;
-    final borderPaint = Paint()
-      ..color = const Color(0xFFFF5252)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawRRect(rrect, bgPaint);
-    canvas.drawRRect(rrect, borderPaint);
-
-    final tp = TextPainter(
-      text: const TextSpan(
-        text: '🔄 Putar Balik',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    tp.layout();
-    tp.paint(canvas, Offset(position.dx - tp.width / 2, position.dy - tp.height / 2));
-  }
-
-  /// Menggambar pin 3D melayang di atas slot tujuan
-  void _drawDestinationPin(Canvas canvas, Size size, Offset userOffset) {
-    final slotOffset = Offset(targetSlot!.x, targetSlot!.y);
-    final dist = (slotOffset - userOffset).distance;
-    if (dist < 0.5 || dist > 18.0) return; // Jangan gambar jika < 0.5m (terlalu dekat) atau > 18m
+  /// Menggambar Map Pin Merah 3D bergaya Google Maps melayang di atas titik tujuan.
+  ///
+  /// [destOffset] = koordinat map-space dari titik akhir rute (currentRoute.last).
+  /// Fitur visual:
+  ///  • Balon merah 3D (Path: kepala bulat + ekor runcing) dengan gradient radial
+  ///  • Lubang lingkaran putih di tengah balon
+  ///  • Highlight spekuler putih di sudut kiri-atas (efek glossy)
+  ///  • Drop shadow oval transparan di lantai (ground anchor)
+  ///  • Animasi bounce halus naik-turun
+  void _drawDestinationPin(
+    Canvas canvas,
+    Size size,
+    Offset userOffset,
+    Offset destOffset,
+  ) {
+    final dist = (destOffset - userOffset).distance;
+    // Jangan gambar jika terlalu dekat (sudah sampai) atau terlalu jauh (> 25 m)
+    if (dist < 0.5 || dist > 25.0) return;
 
     final projected = projector.projectPoint(
-      point: slotOffset,
+      point: destOffset,
       userPosition: userOffset,
       mapHeadingDeg: mapHeadingDeg,
       pitchDeg: pitchDeg,
       screenSize: size,
     );
-
     if (projected == null || !projected.isVisibleOnScreen) return;
 
-    final pos = projected.screenPosition;
-    final elevation = (projected.scale * 0.8).clamp(35.0, 100.0);
-    final bounce = math.sin(animationValue * 2 * math.pi) * 6.0;
-    final pinTop = Offset(pos.dx, pos.dy - elevation + bounce);
+    final groundPos = projected.screenPosition;
 
-    // 1. Lingkaran target di lantai
-    final groundRadius = (projected.scale * 0.35).clamp(8.0, 32.0);
-    final ringPaint = Paint()
-      ..color = const Color(0x9900E5FF)
+    // ─── Ukuran pin berbasis depth (semakin dekat → semakin besar)
+    final depthScale = projected.scale.clamp(0.4, 2.2);
+    final pinW   = 36.0 * depthScale;   // lebar total balon
+    final pinH   = 48.0 * depthScale;   // tinggi total (balon + ekor)
+    final holeR  =  9.0 * depthScale;   // radius lubang tengah
+
+    // Bounce animasi: naik-turun sinusoidal
+    final bounce  = math.sin(animationValue * 2 * math.pi) * (5.0 * depthScale);
+    // Elevasi melayang di atas titik lantai
+    final elevation = (55.0 * depthScale).clamp(40.0, 120.0);
+    // Titik pusat kepala balon
+    final pinCenter = Offset(groundPos.dx, groundPos.dy - elevation + bounce);
+
+    // ────────────────────────────────────────────────────
+    // LAYER 1: Drop shadow oval di lantai (ground anchor)
+    // ────────────────────────────────────────────────────
+    final shadowRx = pinW * 0.60;
+    final shadowRy = pinW * 0.18;
+    // Opacity shadow mengecil seiring bounce (makin tinggi = shadow makin samar)
+    final shadowOpacity = (0.55 - (bounce / (elevation + 1)) * 0.3).clamp(0.10, 0.55);
+    final shadowPaint = Paint()
+      ..color = const Color(0xFF000000).withValues(alpha: shadowOpacity)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, (6.0 * depthScale).clamp(3.0, 12.0))
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(center: groundPos, width: shadowRx * 2, height: shadowRy * 2),
+      shadowPaint,
+    );
+
+    // ────────────────────────────────────────────────────
+    // LAYER 2: Badan pin (balon + ekor runcing) — bentuk Google Maps pin
+    // Koordinat relatif terhadap pinCenter (titik pusat kepala balon)
+    // ────────────────────────────────────────────────────
+    final r   = pinW / 2.0;    // radius kepala balon
+    final tip = pinH - r;      // panjang ekor dari bawah kepala ke ujung runcing
+
+    // Path: lingkaran kepala + ekor segitiga yang menyatu mulus (Bézier)
+    final pinPath = Path();
+    // Mulai dari titik kiri-bawah kepala (awal lengkungan)
+    pinPath.moveTo(pinCenter.dx - r * 0.55, pinCenter.dy + r * 0.82);
+    // Ekor runcing — ujung ke bawah
+    pinPath.quadraticBezierTo(
+      pinCenter.dx,           pinCenter.dy + r * 1.1,  // control point (tengah antara badan & tip)
+      pinCenter.dx,           pinCenter.dy + tip,       // ujung runcing
+    );
+    // Sisi kanan ekor
+    pinPath.quadraticBezierTo(
+      pinCenter.dx,           pinCenter.dy + r * 1.1,
+      pinCenter.dx + r * 0.55, pinCenter.dy + r * 0.82,
+    );
+    // Busur kepala (kanan-bawah → atas → kiri-bawah)
+    pinPath.arcTo(
+      Rect.fromCircle(center: pinCenter, radius: r),
+      0.55,           // startAngle (radian, kira-kira kanan-bawah)
+      2 * math.pi * (270.0 / 360.0), // sweep 270° (meninggalkan celah di bawah untuk ekor)
+      false,
+    );
+    pinPath.close();
+
+    // Outer glow merah di belakang pin
+    final glowPaint = Paint()
+      ..color = const Color(0xFFE53935).withValues(alpha: 0.38)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, (10.0 * depthScale).clamp(5.0, 18.0))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(pinPath, glowPaint);
+
+    // Gradient radial merah 3D (kiri-atas lebih terang, kanan-bawah lebih gelap)
+    final pinBodyPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.45, -0.45),
+        radius: 0.9,
+        colors: const [
+          Color(0xFFFF6B6B),  // highlight terang
+          Color(0xFFE53935),  // merah medium
+          Color(0xFFB71C1C),  // merah gelap
+        ],
+        stops: const [0.0, 0.55, 1.0],
+      ).createShader(Rect.fromCircle(center: pinCenter, radius: r))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(pinPath, pinBodyPaint);
+
+    // Rim/outline putih tipis
+    final rimPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.80)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0;
-    canvas.drawCircle(pos, groundRadius, ringPaint);
+      ..strokeWidth = (1.5 * depthScale).clamp(0.8, 2.5)
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(pinPath, rimPaint);
 
-    final glowRingPaint = Paint()
-      ..color = const Color(0x4400FF88)
-      ..style = PaintingStyle.fill
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8.0);
-    canvas.drawCircle(pos, groundRadius, glowRingPaint);
+    // ────────────────────────────────────────────────────
+    // LAYER 3: Lubang lingkaran putih di tengah kepala balon
+    // ────────────────────────────────────────────────────
+    // Shadow kecil di dalam lubang untuk kedalaman
+    final holeShadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.inner, 3.0)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pinCenter, holeR + 1.5, holeShadowPaint);
 
-    // 2. Garis laser penunjuk vertikal dari lantai ke pin melayang
-    final beamPaint = Paint()
-      ..color = const Color(0x8800E5FF)
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(pos, pinTop, beamPaint);
-
-    // 3. Pin Marker melayang dengan label slot
-    final pinRadius = (projected.scale * 0.28).clamp(16.0, 32.0);
-
-    final pinShadowPaint = Paint()
-      ..color = const Color(0x66000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0);
-    canvas.drawCircle(pinTop.translate(0, 3), pinRadius, pinShadowPaint);
-
-    final pinPaint = Paint()
-      ..shader = const RadialGradient(
-        colors: [Color(0xFFFFD600), Color(0xFFFF9100)],
-      ).createShader(Rect.fromCircle(center: pinTop, radius: pinRadius));
-    canvas.drawCircle(pinTop, pinRadius, pinPaint);
-
-    final pinBorder = Paint()
+    // Lingkaran putih solid
+    final holePaint = Paint()
       ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawCircle(pinTop, pinRadius, pinBorder);
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pinCenter, holeR, holePaint);
 
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: targetSlot!.id,
-        style: TextStyle(
-          color: Colors.black,
-          fontSize: pinRadius * 0.85,
-          fontWeight: FontWeight.bold,
+    // ────────────────────────────────────────────────────
+    // LAYER 4: Highlight spekuler glossy (kiri-atas kepala balon)
+    // ────────────────────────────────────────────────────
+    final highlightCenter = pinCenter.translate(-r * 0.28, -r * 0.30);
+    final highlightPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.65),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromCircle(center: highlightCenter, radius: r * 0.42))
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(highlightCenter, r * 0.42, highlightPaint);
+
+    // ────────────────────────────────────────────────────
+    // LAYER 5: Label slot parkir di bawah pin (jika ada targetSlot)
+    // ────────────────────────────────────────────────────
+    if (targetSlot != null) {
+      final labelText = targetSlot!.id;
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: labelText,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: (11.0 * depthScale).clamp(9.0, 16.0),
+            fontWeight: FontWeight.bold,
+            shadows: const [
+              Shadow(color: Color(0xAA000000), blurRadius: 4, offset: Offset(1, 1)),
+            ],
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        pinTop.dx - textPainter.width / 2,
-        pinTop.dy - textPainter.height / 2,
-      ),
-    );
+        textDirection: TextDirection.ltr,
+      );
+      labelPainter.layout();
+      // Gambar label di bawah ujung ekor pin
+      final labelPos = Offset(
+        pinCenter.dx - labelPainter.width / 2,
+        pinCenter.dy + tip + (4.0 * depthScale),
+      );
+      // Background pil label
+      final labelBg = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(pinCenter.dx, labelPos.dy + labelPainter.height / 2),
+          width:  labelPainter.width + 12.0 * depthScale,
+          height: labelPainter.height + 6.0 * depthScale,
+        ),
+        Radius.circular(4.0 * depthScale),
+      );
+      canvas.drawRRect(
+        labelBg,
+        Paint()..color = const Color(0xCCB71C1C),
+      );
+      labelPainter.paint(canvas, labelPos);
+    }
   }
 
   /// Menggambar indikator panah tepi layar jika rute berada di luar pandangan kamera
