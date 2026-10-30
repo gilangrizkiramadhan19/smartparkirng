@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../models/map_data.dart';
@@ -600,96 +601,135 @@ class _MapPageState extends State<MapPage> {
                   children: [
                     GestureDetector(
                       onLongPress: _showArJsonPayloadDialog,
-                      child: FloatingActionButton.extended(
-                        heroTag: 'map_ar_btn',
-                        backgroundColor: const Color(0xFF1E222D),
-                        foregroundColor: const Color(0xFF00FF88),
-                        tooltip: 'Buka Kamera Navigasi AR Fullscreen (Tahan untuk Payload JSON)',
-                        icon: const Icon(Icons.view_in_ar),
-                        label: const Text(
-                          'Kamera AR',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ArPage(controller: widget.controller),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF00FF88), Color(0xFF00E676)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00E676).withValues(alpha: 0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
                             ),
-                          );
-                        },
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ArPage(controller: widget.controller),
+                                ),
+                              );
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.view_in_ar, color: Color(0xFF051B11), size: 19),
+                                  SizedBox(width: 7),
+                                  Text(
+                                    'Kamera AR',
+                                    style: TextStyle(
+                                      color: Color(0xFF051B11),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),
-                    FloatingActionButton.small(
-                      heroTag: 'map_qr_btn',
-                      backgroundColor: const Color(0xFF1E222D),
-                      foregroundColor: const Color(0xFF00E5FF),
+                    _buildGlassSquareButton(
+                      icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF00E5FF)),
                       tooltip: 'Scan QR Lokasi Awal',
                       onPressed: () => ArQrScannerSheet.show(context, _sensorService),
-                      child: const Icon(Icons.qr_code_scanner),
+                      iconColor: const Color(0xFF00E5FF),
                     ),
                     const SizedBox(height: 10),
-                    FloatingActionButton.small(
-                      heroTag: 'map_center_user_btn',
-                      backgroundColor: const Color(0xFF1E222D),
-                      foregroundColor: const Color(0xFF00E5FF),
+                    _buildGlassSquareButton(
+                      icon: const Icon(Icons.my_location, color: Color(0xFF00E5FF)),
                       tooltip: 'Pusatkan ke posisi saya',
                       onPressed: _centerOnUserPosition,
-                      child: const Icon(Icons.my_location),
+                      iconColor: const Color(0xFF00E5FF),
+                      isActive: ctrl.currentUserPosition != null,
                     ),
                     const SizedBox(height: 10),
-                    FloatingActionButton.small(
-                      heroTag: 'map_fit_screen_btn',
-                      backgroundColor: const Color(0xFF1E222D),
-                      foregroundColor: Colors.white,
+                    _buildGlassSquareButton(
+                      icon: const Icon(Icons.fit_screen, color: Colors.white),
                       tooltip: 'Muat semua denah',
                       onPressed: _fitMapToScreen,
-                      child: const Icon(Icons.fit_screen),
+                      iconColor: Colors.white,
                     ),
                     const SizedBox(height: 10),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E222D),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.add, color: Colors.white, size: 20),
-                            tooltip: 'Perbesar Denah',
-                            onPressed: () {
-                              final newZoom = (_currentZoom * 1.3).clamp(0.5, 6.0);
-                              _zoomTo(newZoom);
-                            },
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E2128).withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1.2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.25),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          Container(
-                            height: 1,
-                            width: 24,
-                            color: Colors.white12,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.add, color: Colors.white, size: 20),
+                                tooltip: 'Perbesar Denah',
+                                onPressed: () {
+                                  final newZoom = (_currentZoom * 1.3).clamp(0.5, 6.0);
+                                  _zoomTo(newZoom);
+                                },
+                              ),
+                              Container(
+                                height: 1,
+                                width: 24,
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.remove, color: Colors.white, size: 20),
+                                tooltip: 'Perkecil Denah',
+                                onPressed: () {
+                                  final newZoom = (_currentZoom / 1.3).clamp(0.5, 6.0);
+                                  _zoomTo(newZoom);
+                                },
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.remove, color: Colors.white, size: 20),
-                            tooltip: 'Perkecil Denah',
-                            onPressed: () {
-                              final newZoom = (_currentZoom / 1.3).clamp(0.5, 6.0);
-                              _zoomTo(newZoom);
-                            },
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              // 4. Panel Navigasi & Kontrol Bawah
+              // 4. Panel Navigasi & Kontrol Bawah (Floating Glass Card)
               Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
+                bottom: 16,
+                left: 16,
+                right: 16,
                 child: _buildBottomControlPanel(ctrl),
               ),
             ],
@@ -697,6 +737,117 @@ class _MapPageState extends State<MapPage> {
         );
       },
     );
+  }
+
+  Widget _buildGlassSquareButton({
+    required Widget icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    Color iconColor = const Color(0xFF00E5FF),
+    bool isActive = false,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2128).withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isActive
+                  ? iconColor.withValues(alpha: 0.7)
+                  : Colors.white.withValues(alpha: 0.12),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isActive
+                    ? iconColor.withValues(alpha: 0.35)
+                    : Colors.black.withValues(alpha: 0.25),
+                blurRadius: isActive ? 10 : 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: IconButton(
+              tooltip: tooltip,
+              onPressed: onPressed,
+              icon: icon,
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGradientActionButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required List<Color> gradientColors,
+    required Color glowColor,
+    Color textColor = const Color(0xFF0D1117),
+    double fontSize = 13,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+    int flex = 1,
+  }) {
+    final content = Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: glowColor.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: padding,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: textColor),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: textColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: fontSize,
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return flex > 0 ? Expanded(flex: flex, child: content) : content;
   }
 
   IconData _getTurnIcon(String instruction) {
@@ -742,465 +893,408 @@ class _MapPageState extends State<MapPage> {
     } else {
       destName = 'Pilih Tujuan Navigasi';
       destCoord = '-';
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E222D),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 12,
-            offset: const Offset(0, -4),
-          ),
-        ],
-        border: Border.all(color: Colors.white12),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Panel Kartu DARI dan KE dengan tombol Tukar
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF161922),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
+    }    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E2128).withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.1),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
-              child: Column(
-                children: [
-                  // Baris DARI
-                  InkWell(
-                    onTap: !ctrl.isNavigating
-                        ? () => DestinationPickerSheet.show(context, ctrl, isSelectingStart: true)
-                        : null,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              color: const Color(0x3300E676),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: const Color(0xFF00E676), width: 1.5),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.trip_origin, size: 14, color: Color(0xFF00E676)),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Panel Kartu DARI dan KE dengan tombol Tukar
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF14171F).withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Column(
+                    children: [
+                      // Baris DARI
+                      InkWell(
+                        onTap: !ctrl.isNavigating
+                            ? () => DestinationPickerSheet.show(context, ctrl, isSelectingStart: true)
+                            : null,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 26,
+                                height: 26,
+                                decoration: BoxDecoration(
+                                  color: const Color(0x3300E676),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: const Color(0xFF00E676), width: 1.5),
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.trip_origin, size: 14, color: Color(0xFF00E676)),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'Dari: ',
-                                      style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
+                                    Row(
+                                      children: [
+                                        const Text(
+                                          'Dari: ',
+                                          style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            startName,
+                                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    Expanded(
-                                      child: Text(
-                                        startName,
-                                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                    Text(
+                                      'Koordinat: $startCoord',
+                                      style: const TextStyle(color: Color(0xFF00E676), fontSize: 11, fontFamily: 'monospace'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!ctrl.isNavigating)
+                                const Icon(Icons.edit_location_alt_outlined, color: Colors.white38, size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Divider dengan tombol Tukar (Swap)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            Container(width: 2, height: 16, color: Colors.white24),
+                            const SizedBox(width: 14),
+                            Expanded(child: Container(height: 1, color: Colors.white10)),
+                            if (!ctrl.isNavigating && ctrl.targetDestination != null && ctrl.startNode != null) ...[
+                              InkWell(
+                                onTap: () => ctrl.swapStartAndDestination(),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF232733),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: Colors.white24),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.swap_vert, size: 14, color: Color(0xFF00E5FF)),
+                                      SizedBox(width: 2),
+                                      Text(
+                                        'Tukar',
+                                        style: TextStyle(color: Color(0xFF00E5FF), fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // Baris KE
+                      InkWell(
+                        onTap: !ctrl.isNavigating
+                            ? () => DestinationPickerSheet.show(context, ctrl, isSelectingStart: false)
+                            : null,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 26,
+                                height: 26,
+                                decoration: BoxDecoration(
+                                  color: const Color(0x33FFAB00),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: const Color(0xFFFFAB00), width: 1.5),
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.location_on, size: 15, color: Color(0xFFFFD600)),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Text(
+                                          'Ke: ',
+                                          style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            destName,
+                                            style: TextStyle(
+                                              color: hasDestination ? Colors.white : Colors.white38,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Text(
+                                      'Koordinat: $destCoord',
+                                      style: TextStyle(
+                                        color: hasDestination ? const Color(0xFFFFD600) : Colors.white38,
+                                        fontSize: 11,
+                                        fontFamily: 'monospace',
                                       ),
                                     ),
                                   ],
                                 ),
-                                Text(
-                                  'Koordinat: $startCoord',
-                                  style: const TextStyle(color: Color(0xFF00E676), fontSize: 11, fontFamily: 'monospace'),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (!ctrl.isNavigating)
-                            const Icon(Icons.edit_location_alt_outlined, color: Colors.white38, size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Divider dengan tombol Tukar (Swap)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        Container(width: 2, height: 16, color: Colors.white24),
-                        const SizedBox(width: 14),
-                        Expanded(child: Container(height: 1, color: Colors.white10)),
-                        if (!ctrl.isNavigating && ctrl.targetDestination != null && ctrl.startNode != null) ...[
-                          InkWell(
-                            onTap: () => ctrl.swapStartAndDestination(),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF232733),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.white24),
                               ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
+                              if (!ctrl.isNavigating)
+                                const Icon(Icons.search, color: Color(0xFF00E5FF), size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Info Jarak Rute & Turn-by-Turn Instruction
+                ListenableBuilder(
+                  listenable: Listenable.merge([
+                    ctrl.routeDistanceNotifier,
+                    ctrl.turnInstructionNotifier,
+                  ]),
+                  builder: (context, _) {
+                    final dist = ctrl.routeDistanceNotifier.value;
+                    final instruction = ctrl.turnInstructionNotifier.value;
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (dist > 0 || ctrl.isNavigating) ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
                                 children: [
-                                  Icon(Icons.swap_vert, size: 14, color: Color(0xFF00E5FF)),
-                                  SizedBox(width: 2),
+                                  const Icon(Icons.directions_walk, color: Color(0xFF00E5FF), size: 18),
+                                  const SizedBox(width: 6),
                                   Text(
-                                    'Tukar',
-                                    style: TextStyle(color: Color(0xFF00E5FF), fontSize: 10, fontWeight: FontWeight.bold),
+                                    'Jarak: ${dist.toStringAsFixed(1)} m • ~${(dist / 1.2).round()} dtk',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                                   ),
                                 ],
                               ),
+                              if (ctrl.isNavigating)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x3300E676),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFF00E676)),
+                                  ),
+                                  child: const Text(
+                                    'Navigasi Aktif',
+                                    style: TextStyle(
+                                      color: Color(0xFF00E676),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                        if (instruction.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF141822).withValues(alpha: 0.75),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(_getTurnIcon(instruction), color: const Color(0xFF00E5FF), size: 18),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    instruction,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ],
-                    ),
-                  ),
+                    );
+                  },
+                ),
 
-                  // Baris KE
-                  InkWell(
-                    onTap: !ctrl.isNavigating
-                        ? () => DestinationPickerSheet.show(context, ctrl, isSelectingStart: false)
-                        : null,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              color: const Color(0x33FFAB00),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: const Color(0xFFFFAB00), width: 1.5),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.location_on, size: 15, color: Color(0xFFFFD600)),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Text(
-                                      'Ke: ',
-                                      style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        destName,
-                                        style: TextStyle(
-                                          color: hasDestination ? Colors.white : Colors.white38,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  'Koordinat: $destCoord',
-                                  style: TextStyle(
-                                    color: hasDestination ? const Color(0xFFFFD600) : Colors.white38,
-                                    fontSize: 11,
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (!ctrl.isNavigating)
-                            const Icon(Icons.search, color: Color(0xFF00E5FF), size: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                const SizedBox(height: 12),
 
-            const SizedBox(height: 12),
-
-            // Info Jarak Rute & Turn-by-Turn Instruction
-            ListenableBuilder(
-              listenable: Listenable.merge([
-                ctrl.routeDistanceNotifier,
-                ctrl.turnInstructionNotifier,
-              ]),
-              builder: (context, _) {
-                final dist = ctrl.routeDistanceNotifier.value;
-                final instruction = ctrl.turnInstructionNotifier.value;
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (dist > 0 || ctrl.isNavigating) ...[
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.directions_walk, color: Color(0xFF00E5FF), size: 18),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Jarak: ${dist.toStringAsFixed(1)} m • ~${(dist / 1.2).round()} dtk',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                          if (ctrl.isNavigating)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0x3300E676),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFF00E676)),
-                              ),
-                              child: const Text(
-                                'Navigasi Aktif',
-                                style: TextStyle(
-                                  color: Color(0xFF00E676),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                    if (instruction.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF141822),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
+                // Baris Tombol Aksi
+                if (!ctrl.isNavigating) ...[
+                  Row(
+                    children: [
+                      // Jika tujuan sudah dipilih -> Tombol Utama "Mulai Navigasi"
+                      if (hasDestination) ...[
+                        _buildGradientActionButton(
+                          flex: 3,
+                          onPressed: () {
+                            if (ctrl.targetDestination != null) {
+                              ctrl.startRouteNavigation();
+                            } else {
+                              ctrl.startNavigation();
+                            }
+                          },
+                          icon: Icons.navigation,
+                          label: 'Mulai Navigasi',
+                          gradientColors: const [Color(0xFF00E5FF), Color(0xFF0091EA)],
+                          glowColor: const Color(0xFF00E5FF),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(_getTurnIcon(instruction), color: const Color(0xFF00E5FF), size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                instruction,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 8),
+                      ] else ...[
+                        // Jika belum memilih tujuan -> Tombol Utama "Pilih Tujuan"
+                        _buildGradientActionButton(
+                          flex: 3,
+                          onPressed: () => DestinationPickerSheet.show(context, ctrl),
+                          icon: Icons.search,
+                          label: 'Pilih Tujuan',
+                          gradientColors: const [Color(0xFF00E5FF), Color(0xFF0091EA)],
+                          glowColor: const Color(0xFF00E5FF),
                         ),
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
+                        const SizedBox(width: 8),
+                      ],
 
-            const SizedBox(height: 12),
-
-            // Baris Tombol Aksi
-            if (!ctrl.isNavigating) ...[
-              Row(
-                children: [
-                  // Jika tujuan sudah dipilih -> Tombol Utama "Mulai Navigasi"
-                  if (hasDestination) ...[
-                    Expanded(
-                      flex: 3,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00E5FF),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                      // Tombol Toilet jika ada toilet
+                      if (ctrl.hasToilets) ...[
+                        _buildGradientActionButton(
+                          flex: 0,
+                          onPressed: () => ctrl.findNearestToilet(),
+                          icon: Icons.wc,
+                          label: 'Toilet',
+                          textColor: Colors.white,
+                          gradientColors: const [Color(0xFFC084FC), Color(0xFF9333EA)],
+                          glowColor: const Color(0xFFA855F7),
                         ),
+                        const SizedBox(width: 8),
+                      ],
+
+                      // Tombol Cari Slot Parkir jika ada slot
+                      if (ctrl.hasSlots) ...[
+                        _buildGradientActionButton(
+                          flex: 0,
+                          onPressed: () => ctrl.startNavigation(),
+                          icon: Icons.local_parking,
+                          label: 'Slot',
+                          textColor: const Color(0xFF0A101D),
+                          gradientColors: const [Color(0xFF2DD4BF), Color(0xFF00E5FF)],
+                          glowColor: const Color(0xFF2DD4BF),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+
+                      // Tombol AR
+                      _buildGradientActionButton(
+                        flex: 2,
                         onPressed: () {
-                          if (ctrl.targetDestination != null) {
-                            ctrl.startRouteNavigation();
-                          } else {
-                            ctrl.startNavigation();
-                          }
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ArPage(controller: widget.controller),
+                            ),
+                          );
                         },
-                        icon: const Icon(Icons.navigation, size: 20),
-                        label: const Text(
-                          'Mulai Navigasi',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
+                        icon: Icons.view_in_ar,
+                        label: 'Kamera AR',
+                        gradientColors: const [Color(0xFF00FF88), Color(0xFF00E676)],
+                        glowColor: const Color(0xFF00E676),
+                        textColor: const Color(0xFF051B11),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                  ] else ...[
-                    // Jika belum memilih tujuan -> Tombol Utama "Pilih Tujuan"
-                    Expanded(
-                      flex: 3,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00E5FF),
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: () => DestinationPickerSheet.show(context, ctrl),
-                        icon: const Icon(Icons.search, size: 20),
-                        label: const Text(
-                          'Pilih Tujuan',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
+                    ],
+                  ),
+                ] else ...[
+                  // Tombol kontrol saat navigasi aktif
+                  Row(
+                    children: [
+                      _buildGradientActionButton(
+                        flex: 1,
+                        onPressed: () => ctrl.stopNavigation(),
+                        icon: Icons.stop_circle_outlined,
+                        label: 'Hentikan Navigasi',
+                        gradientColors: const [Color(0xFFFF5252), Color(0xFFD50000)],
+                        glowColor: const Color(0xFFFF5252),
+                        textColor: Colors.white,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-
-                  // Tombol Toilet jika ada toilet
-                  if (ctrl.hasToilets) ...[
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFA855F7),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                      const SizedBox(width: 10),
+                      _buildGradientActionButton(
+                        flex: 1,
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ArPage(controller: widget.controller),
+                            ),
+                          );
+                        },
+                        icon: Icons.view_in_ar,
+                        label: 'Buka AR',
+                        gradientColors: const [Color(0xFF00FF88), Color(0xFF00E676)],
+                        glowColor: const Color(0xFF00E676),
+                        textColor: const Color(0xFF051B11),
                       ),
-                      onPressed: () => ctrl.findNearestToilet(),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.wc, size: 18),
-                          SizedBox(width: 4),
-                          Text('Toilet', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-
-                  // Tombol Cari Slot Parkir jika ada slot
-                  if (ctrl.hasSlots) ...[
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00E676),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () => ctrl.startNavigation(),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.local_parking, size: 18),
-                          SizedBox(width: 4),
-                          Text('Slot', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-
-                  // Tombol AR
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00FF88),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ArPage(controller: widget.controller),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.view_in_ar, size: 18),
-                      label: const Text(
-                        'AR',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ),
+                    ],
                   ),
                 ],
-              ),
-            ] else ...[
-              // Tombol kontrol saat navigasi aktif
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFFF5252),
-                        side: const BorderSide(color: Color(0xFFFF5252)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () => ctrl.stopNavigation(),
-                      icon: const Icon(Icons.stop, size: 20),
-                      label: const Text('Hentikan Navigasi', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00FF88),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ArPage(controller: widget.controller),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.view_in_ar, size: 20),
-                      label: const Text('Buka AR', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

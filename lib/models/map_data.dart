@@ -219,6 +219,44 @@ class CoordinateSystem {
       };
 }
 
+/// Model tembok arsitektur denah dari Indoor AR Map Editor.
+class MapWall {
+  final String id;
+  final double x1;
+  final double y1;
+  final double x2;
+  final double y2;
+
+  const MapWall({
+    required this.id,
+    required this.x1,
+    required this.y1,
+    required this.x2,
+    required this.y2,
+  });
+
+  factory MapWall.fromJson(Map<String, dynamic> json) {
+    return MapWall(
+      id: json['id']?.toString().trim() ?? '',
+      x1: (json['x1'] as num?)?.toDouble() ?? 0.0,
+      y1: (json['y1'] as num?)?.toDouble() ?? 0.0,
+      x2: (json['x2'] as num?)?.toDouble() ?? 0.0,
+      y2: (json['y2'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'x1': x1,
+        'y1': y1,
+        'x2': x2,
+        'y2': y2,
+      };
+
+  @override
+  String toString() => 'MapWall(id: $id, ($x1, $y1) -> ($x2, $y2))';
+}
+
 /// Data denah untuk satu lantai.
 class FloorData {
   final String id;
@@ -228,6 +266,7 @@ class FloorData {
   final double northOffset;
   final List<MapNode> nodes;
   final List<MapEdge> edges;
+  final List<MapWall> walls;
 
   const FloorData({
     required this.id,
@@ -237,6 +276,7 @@ class FloorData {
     this.northOffset = 0.0,
     required this.nodes,
     required this.edges,
+    this.walls = const [],
   });
 
   factory FloorData.fromJson(Map<String, dynamic> json) {
@@ -256,6 +296,11 @@ class FloorData {
         .map((e) => MapEdge.fromJson(e as Map<String, dynamic>))
         .toList();
 
+    final rawWalls = json['walls'] as List<dynamic>? ?? [];
+    final walls = rawWalls
+        .map((w) => MapWall.fromJson(w as Map<String, dynamic>))
+        .toList();
+
     return FloorData(
       id: rawId,
       name: name,
@@ -264,6 +309,7 @@ class FloorData {
       northOffset: northOffset,
       nodes: nodes,
       edges: edges,
+      walls: walls,
     );
   }
 
@@ -275,6 +321,7 @@ class FloorData {
         'northOffset': northOffset,
         'nodes': nodes.map((n) => n.toJson()).toList(),
         'edges': edges.map((e) => e.toJson()).toList(),
+        'walls': walls.map((w) => w.toJson()).toList(),
       };
 
   /// Mencari node berdasarkan ID (case-insensitive).

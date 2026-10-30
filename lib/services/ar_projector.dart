@@ -77,8 +77,7 @@ class ARProjector {
 
   /// Normalisasi sudut dalam rentang [0, 360) derajat.
   static double normalizeAngleDeg(double deg) {
-    final mod = deg % 360.0;
-    return mod >= 0 ? mod : mod + 360.0;
+    return ((deg % 360.0) + 360.0) % 360.0;
   }
 
   /// Menghitung selisih sudut terkecil antara target dan orientasi saat ini dalam rentang [-180, 180] derajat.

@@ -35,7 +35,10 @@ class MapPainter extends CustomPainter {
     // 1. Gambar latar belakang denah
     _drawFloor(canvas, size);
 
-    // 2. Gambar koridor / lintasan edge
+    // 2. Gambar tembok denah arsitektur
+    _drawWalls(canvas);
+
+    // 3. Gambar koridor / lintasan edge
     _drawDrivewaysAndEdges(canvas);
 
     // 3. Gambar rute navigasi A* (jika ada)
@@ -93,6 +96,24 @@ class MapPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0 / _safeZoom;
     canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(16)), borderPaint);
+  }
+
+  void _drawWalls(Canvas canvas) {
+    final walls = floor?.walls;
+    if (walls == null || walls.isEmpty) return;
+
+    final wallPaint = Paint()
+      ..color = const Color(0xFF2B3145) // Abu-abu gelap kebiruan
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round;
+
+    for (final wall in walls) {
+      canvas.drawLine(
+        _toOffset(wall.x1, wall.y1),
+        _toOffset(wall.x2, wall.y2),
+        wallPaint,
+      );
+    }
   }
 
   void _drawDrivewaysAndEdges(Canvas canvas) {

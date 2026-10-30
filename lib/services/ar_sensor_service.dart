@@ -270,8 +270,8 @@ class ARSensorService extends ChangeNotifier {
   String get lastRejectReason => _lastRejectReason;
 
   double get effectiveMapHeading {
-    final raw = (compassHeadingFlutterCompass + mapHeadingOffsetDeg) % 360.0;
-    return (raw + 360.0) % 360.0;
+    final total = compassHeadingFlutterCompass + mapHeadingOffsetDeg;
+    return ((total % 360.0) + 360.0) % 360.0;
   }
 
   /// Memulai pendengaran sensor fisik HP saat service dibuat (ketika ArPage dibuka).
@@ -286,9 +286,9 @@ class ARSensorService extends ChangeNotifier {
           _lastCompassEventTime = now;
           _hasCompass = true;
 
-          // Gunakan event.heading standar, hardware menolak camera mode
-          double rawHeading = event.heading ?? 0.0;
-          _rawCompassHeading = (rawHeading % 360.0 + 360.0) % 360.0;
+          // Gunakan event.heading standar yang dikoreksi 180° untuk orientasi kamera belakang
+          double rawHeading = (event.heading ?? 0.0) + 180.0;
+          _rawCompassHeading = ((rawHeading % 360.0) + 360.0) % 360.0;
           _filteredCompassHeading = _circularEma(_filteredCompassHeading, _rawCompassHeading, 0.2);
 
           _requestThrottleRepaint();

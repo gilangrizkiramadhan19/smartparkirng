@@ -73,6 +73,9 @@ class AROverlayPainter extends CustomPainter {
       maxDistance: 15.0,
     );
 
+    // Normalisasi heading kompas agar aman dari nilai negatif: ((deg % 360) + 360) % 360
+    final safeHeading = ((mapHeadingDeg % 360.0) + 360.0) % 360.0;
+
     // 3. Proyeksikan setiap titik interval ke layar menggunakan ARProjector
     final projectedList = <ProjectedPoint?>[];
     for (final pt in routePoints) {
@@ -80,7 +83,7 @@ class AROverlayPainter extends CustomPainter {
         projector.projectPoint(
           point: pt,
           userPosition: userOffset,
-          mapHeadingDeg: mapHeadingDeg,
+          mapHeadingDeg: safeHeading,
           pitchDeg: pitchDeg,
           screenSize: size,
         ),
@@ -442,10 +445,11 @@ class AROverlayPainter extends CustomPainter {
     // Jangan gambar jika terlalu dekat (sudah sampai) atau terlalu jauh (> 25 m)
     if (dist < 0.5 || dist > 25.0) return;
 
+    final safeHeading = ((mapHeadingDeg % 360.0) + 360.0) % 360.0;
     final projected = projector.projectPoint(
       point: destOffset,
       userPosition: userOffset,
-      mapHeadingDeg: mapHeadingDeg,
+      mapHeadingDeg: safeHeading,
       pitchDeg: pitchDeg,
       screenSize: size,
     );
@@ -632,10 +636,11 @@ class AROverlayPainter extends CustomPainter {
       }
     }
 
+    final safeHeading = ((mapHeadingDeg % 360.0) + 360.0) % 360.0;
     final projected = projector.projectPoint(
       point: nextTarget,
       userPosition: userOffset,
-      mapHeadingDeg: mapHeadingDeg,
+      mapHeadingDeg: safeHeading,
       pitchDeg: pitchDeg,
       screenSize: size,
     );
@@ -643,7 +648,7 @@ class AROverlayPainter extends CustomPainter {
     // Dapatkan panduan arah belok dari satu sumber kebenaran yang sama (ambang lurus +-20 derajat)
     final guidance = ARProjector.getOffScreenGuidance(
       userPos: userOffset,
-      userHeadingDeg: mapHeadingDeg,
+      userHeadingDeg: safeHeading,
       targetPoint: nextTarget,
     );
 

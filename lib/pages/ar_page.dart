@@ -376,9 +376,10 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
     if (nextTarget == null) return;
 
     final targetBearing = ARProjector.calculateBearingDeg(userRawPos, nextTarget);
+    final safeHeading = ((_sensorService.effectiveMapHeading % 360.0) + 360.0) % 360.0;
     final rawRelative = ARProjector.calculateRelativeAngleDeg(
       targetBearing,
-      _sensorService.effectiveMapHeading,
+      safeHeading,
     );
 
     // Terapkan Lerp sudut terpendek (shortest path) dengan faktor 0.15 per frame
@@ -447,9 +448,10 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
     final nextTarget = _getNextRoutePoint(userOffset, route) ?? Offset(route.first.x, route.first.y);
 
     // Satu sumber kebenaran: guidance dihitung dari selisih bearing target vs heading HP
+    final safeHeading = ((_sensorService.effectiveMapHeading % 360.0) + 360.0) % 360.0;
     final guidance = ARProjector.getOffScreenGuidance(
       userPos: userOffset,
-      userHeadingDeg: _sensorService.effectiveMapHeading,
+      userHeadingDeg: safeHeading,
       targetPoint: nextTarget,
     );
 
@@ -887,7 +889,7 @@ class _ArPageState extends State<ArPage> with SingleTickerProviderStateMixin {
             currentRoute: ctrl.currentRoute,
             userPosition: snappedPos,
             rawUserPosition: arUserOffset,
-            mapHeadingDeg: _sensorService.effectiveMapHeading,
+            mapHeadingDeg: ((_sensorService.effectiveMapHeading % 360.0) + 360.0) % 360.0,
             pitchDeg: (90.0 - _sensorService.devicePitchDeg).clamp(0.0, 75.0),
             targetSlot: ctrl.targetSlot,
             animationValue: _pulseAnimationController.value,

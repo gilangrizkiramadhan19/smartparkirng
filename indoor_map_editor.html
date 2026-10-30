@@ -536,6 +536,9 @@ input[type=range]::-webkit-slider-thumb {
       <button class="tool-btn" data-tool="route">
         <span class="t-icon">&#x1F5FA;</span> Uji Rute <span class="t-key">4</span>
       </button>
+      <button class="tool-btn" data-tool="add-wall">
+        <span class="t-icon">&#x25AD;</span> Gambar Tembok <span class="t-key">5</span>
+      </button>
     </div>
 
     <div class="sidebar-section">
@@ -728,6 +731,16 @@ input[type=range]::-webkit-slider-thumb {
       <div class="insp-divider"></div>
       <div class="insp-actions">
         <button class="insp-btn danger" id="btn-delete-edge">&#x1F5D1; Hapus Jalur Ini</button>
+      </div>
+    </div>
+
+    <div class="inspector-body" id="insp-wall" style="display:none">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px">TEMBOK (WALL)</div>
+      <div class="insp-field"><label>ID</label><input type="text" id="wall-id-input" readonly style="color:var(--text-dim)"></div>
+      <div class="insp-field"><label>Panjang (m)</label><input type="text" id="wall-length-input" readonly style="color:var(--cyan);font-family:var(--mono);font-weight:600"></div>
+      <div class="insp-divider"></div>
+      <div class="insp-actions">
+        <button class="insp-btn danger" id="btn-delete-wall">&#x1F5D1; Hapus Tembok Ini</button>
       </div>
     </div>
 
@@ -954,6 +967,12 @@ const state = {
   nodeCounter: 0,
   edgeCounter: 0,
   floorCounter: 0,
+  wallCounter: 0,
+  doorCounter: 0,
+
+  // Wall tool
+  wallStartX: null,
+  wallStartY: null,
 
   // Viewport
   offsetX: 60,
@@ -967,6 +986,7 @@ const state = {
   // Select tool
   selectedNodeId: null,
   selectedEdgeId: null,
+  selectedWallId: null,
   draggingNodeId: null,
 
   // Connect tool
@@ -997,14 +1017,16 @@ const state = {
    ============================================= */
 function createFloor(name, width, length) {
   state.floorCounter++;
-  return { id: 'L' + state.floorCounter, name, width, length, northOffset: 0, nodes: [], edges: [] };
+  return { id: 'L' + state.floorCounter, name, width, length, northOffset: 0, nodes: [], edges: [], walls: [], doors: [] };
 }
 
 function currentFloor() { return state.floors[state.currentFloorIdx] || null; }
 
 function switchFloor(idx) {
   state.selectedNodeId = null; state.selectedEdgeId = null;
+  state.selectedWallId = null;
   state.connectFromId = null; state.routePath = [];
+  state.wallStartX = null; state.wallStartY = null;
   state.currentFloorIdx = idx;
   updateFloorTabs(); updateFloorSettings(); updateInspector();
   updateStats(); renderCanvas(); updateRouteSelects();
@@ -1015,6 +1037,8 @@ function switchFloor(idx) {
    ============================================= */
 function genNodeId() { state.nodeCounter++; return 'n' + state.nodeCounter; }
 function genEdgeId() { state.edgeCounter++; return 'e' + state.edgeCounter; }
+function genWallId() { state.wallCounter = (state.wallCounter || 0) + 1; return 'w' + state.wallCounter; }
+function genDoorId() { state.doorCounter = (state.doorCounter || 0) + 1; return 'd' + state.doorCounter; }
 
 function euclidDist(a, b) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
@@ -1361,6 +1385,7 @@ function cloneState() {
     floors: JSON.parse(JSON.stringify(state.floors)),
     nodeCounter: state.nodeCounter, edgeCounter: state.edgeCounter,
     floorCounter: state.floorCounter, currentFloorIdx: state.currentFloorIdx,
+    wallCounter: state.wallCounter || 0, doorCounter: state.doorCounter || 0,
   };
 }
 function saveUndo() {
@@ -1372,8 +1397,10 @@ function restoreSnap(saved) {
   state.floors = saved.floors;
   state.nodeCounter = saved.nodeCounter; state.edgeCounter = saved.edgeCounter;
   state.floorCounter = saved.floorCounter; state.currentFloorIdx = saved.currentFloorIdx;
-  state.selectedNodeId = null; state.selectedEdgeId = null;
+  state.wallCounter = saved.wallCounter || 0; state.doorCounter = saved.doorCounter || 0;
+  state.selectedNodeId = null; state.selectedEdgeId = null; state.selectedWallId = null;
   state.connectFromId = null; state.routePath = [];
+  state.wallStartX = null; state.wallStartY = null;
   updateFloorTabs(); updateFloorSettings(); updateInspector();
   updateStats(); renderCanvas(); updateRouteSelects();
 }
@@ -1469,6 +1496,9 @@ function renderCanvas() {
   drawBlueprint(floor);
   drawGrid(floor);
   drawFloorBounds(floor);
+  drawWalls(floor);
+  drawDoors(floor);
+  if (state.tool === 'add-wall' && state.wallStartX !== null && state._mouse) drawWallRubber(floor);
   drawEdges(floor);
   if (state.routePath.length >= 2) drawRoute(floor);
   if (state.tool === 'connect' && state.connectFromId && state._mouse) drawRubber(floor);
@@ -1533,6 +1563,93 @@ function drawFloorBounds(floor) {
   ctx.setLineDash([]);
   ctx.fillStyle = 'rgba(0,229,255,0.5)'; ctx.font = '11px Inter,sans-serif'; ctx.textAlign = 'left';
   ctx.fillText(floor.name + '  (' + floor.width + 'm x ' + floor.length + 'm)', ox+6, oy+16);
+}
+
+/* ==========================================================================
+   [3D ENGINE INTEGRATION NOTE - THREE.JS ARCHITECTURE EXTENSION]
+   Array `floor.walls` berisi segmen garis 2D dalam satuan meter (x1, y1, x2, y2).
+   Saat mode 3D (Three.js) diaktifkan, data tembok ini dapat dikonversi menjadi:
+   1. THREE.BoxGeometry atau THREE.ExtrudeGeometry:
+      - Hitung panjang d = Math.hypot(x2 - x1, y2 - y1) dan sudut rotasi theta = Math.atan2(y2 - y1, x2 - x1).
+      - Tinggi tembok standar gedung: misal 2.8m - 3.0m (elevasi Y/Z di Three.js).
+      - Ketebalan dinding: misal 0.15m - 0.20m.
+      - Mesh diposisikan di titik tengah ((x1 + x2) / 2, tinggi / 2, (y1 + y2) / 2).
+   2. Pintu (`floor.doors`):
+      - Diposisikan di (x, y) dengan dimensi bukaan (width), dapat digunakan untuk CSG
+        (Constructive Solid Geometry) boolean subtraction guna memotong dinding,
+        atau diletakkan frame/daun pintu 3D langsung dengan rotasi yang sesuai.
+   ========================================================================== */
+
+/* --- Walls (Tembok Arsitektur) --- */
+function drawWalls(floor) {
+  if (!floor.walls || !floor.walls.length) return;
+  const p = ppm();
+  ctx.save();
+  ctx.lineCap = 'round';
+  floor.walls.forEach(w => {
+    const x1 = w.x1 * p + state.offsetX;
+    const y1 = w.y1 * p + state.offsetY;
+    const x2 = w.x2 * p + state.offsetX;
+    const y2 = w.y2 * p + state.offsetY;
+    const sel = w.id === state.selectedWallId;
+    ctx.strokeStyle = sel ? '#ffd740' : '#2b3145'; // Warna kuning saat dipilih
+    ctx.lineWidth = sel ? Math.max(4.5, 7 * Math.min(state.zoom, 1.6)) : Math.max(3, 5 * Math.min(state.zoom, 1.6));
+    if (sel) {
+      ctx.shadowColor = '#ffd740';
+      ctx.shadowBlur = 12;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+/* --- Doors (Pintu Arsitektur) --- */
+function drawDoors(floor) {
+  if (!floor.doors || !floor.doors.length) return;
+  const p = ppm();
+  ctx.save();
+  floor.doors.forEach(d => {
+    const cx = d.x * p + state.offsetX;
+    const cy = d.y * p + state.offsetY;
+    const dw = (d.width || 0.9) * p; // default lebar pintu 0.9m
+    const dt = 0.2 * p; // tebal pintu 0.2m
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (d.rotation) ctx.rotate(d.rotation);
+    ctx.fillStyle = '#d7ccc8'; // Coklat terang / wood tone
+    ctx.strokeStyle = '#8d6e63';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(-dw / 2, -dt / 2, dw, dt);
+    ctx.strokeRect(-dw / 2, -dt / 2, dw, dt);
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+/* --- Rubber-band preview for wall drawing --- */
+function drawWallRubber(floor) {
+  if (state.tool !== 'add-wall' || state.wallStartX === null || !state._mouse) return;
+  const p = ppm();
+  const x1 = state.wallStartX * p + state.offsetX;
+  const y1 = state.wallStartY * p + state.offsetY;
+  const m = cToM(state._mouse.x, state._mouse.y);
+  const x2 = snap(m.x) * p + state.offsetX;
+  const y2 = snap(m.y) * p + state.offsetY;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 112, 67, 0.75)'; // Orange/coral dashed preview
+  ctx.lineWidth = Math.max(3, 4 * Math.min(state.zoom, 1.6));
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 /* --- Edges --- */
@@ -1675,6 +1792,27 @@ function hitEdge(floor, cx, cy) {
   return null;
 }
 
+function hitWall(floor, cx, cy) {
+  if (!floor.walls || !floor.walls.length) return null;
+  const p = ppm();
+  const THRESH = Math.max(12, 10 * Math.min(state.zoom, 1.5)); // Toleransi adaptif 12px - 15px
+  for (let i = floor.walls.length - 1; i >= 0; i--) {
+    const w = floor.walls[i];
+    const ax = w.x1 * p + state.offsetX, ay = w.y1 * p + state.offsetY;
+    const bx = w.x2 * p + state.offsetX, by = w.y2 * p + state.offsetY;
+    const dx = bx - ax, dy = by - ay;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) {
+      if (Math.hypot(cx - ax, cy - ay) <= THRESH) return w;
+      continue;
+    }
+    const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / len2));
+    const d = Math.sqrt((cx - (ax + t * dx)) ** 2 + (cy - (ay + t * dy)) ** 2);
+    if (d <= THRESH) return w;
+  }
+  return null;
+}
+
 /* =============================================
    MOUSE EVENTS
    ============================================= */
@@ -1704,12 +1842,13 @@ canvas.addEventListener('mousemove', e => {
   }
 
   if (state.tool==='connect' && state.connectFromId) renderCanvas();
+  if (state.tool==='add-wall' && state.wallStartX !== null) renderCanvas();
 
   // Cursor style
   if (state.spaceDown || e.buttons===2) canvas.style.cursor='grab';
   else if (state.tool==='select') {
     const floor=currentFloor();
-    canvas.style.cursor = (floor && hitNode(floor,x,y)) ? 'pointer' : 'default';
+    canvas.style.cursor = (floor && (hitNode(floor,x,y) || hitEdge(floor,x,y) || hitWall(floor,x,y))) ? 'pointer' : 'default';
   } else canvas.style.cursor='crosshair';
 });
 
@@ -1727,12 +1866,42 @@ canvas.addEventListener('mousedown', e => {
 
   const m = cToM(x,y);
 
+  if (state.tool==='add-wall') {
+    if (state.wallStartX === null) {
+      // Klik pertama: tetapkan titik awal
+      state.wallStartX = snap(m.x);
+      state.wallStartY = snap(m.y);
+    } else {
+      // Klik kedua (metode Click-to-Click): selesaikan pembuatan tembok
+      const endX = snap(m.x);
+      const endY = snap(m.y);
+      const dist = Math.hypot(endX - state.wallStartX, endY - state.wallStartY);
+      if (dist >= 0.2) {
+        saveUndo();
+        floor.walls = floor.walls || [];
+        floor.walls.push({
+          id: genWallId(),
+          x1: +state.wallStartX.toFixed(3),
+          y1: +state.wallStartY.toFixed(3),
+          x2: +endX.toFixed(3),
+          y2: +endY.toFixed(3),
+        });
+        autosave();
+        toast('Tembok ditambahkan', 'success');
+      }
+      state.wallStartX = null;
+      state.wallStartY = null;
+    }
+    renderCanvas();
+    return;
+  }
+
   if (state.tool==='add-node') {
     saveUndo();
     const typeId = document.getElementById('new-node-type').value || 'junction';
     const autoName = getNextTypeName(floor, typeId);
     const node = addNode(snap(m.x), snap(m.y), typeId, autoName);
-    state.selectedNodeId=node.id; state.selectedEdgeId=null;
+    state.selectedNodeId=node.id; state.selectedEdgeId=null; state.selectedWallId=null;
     updateInspector(); updateStats(); updateSidebarNodeList(); renderCanvas(); autosave(); return;
   }
 
@@ -1752,6 +1921,7 @@ canvas.addEventListener('mousedown', e => {
           autosave();
           state.selectedEdgeId = edge.id;
           state.selectedNodeId = null;
+          state.selectedWallId = null;
           updateInspector();
           openFloatingEdgeInput(edge.id, x, y);
         }
@@ -1765,13 +1935,21 @@ canvas.addEventListener('mousedown', e => {
   if (state.tool==='select') {
     const hitN = hitNode(floor,x,y);
     if (hitN) {
-      state.selectedNodeId=hitN.id; state.selectedEdgeId=null;
+      state.selectedNodeId=hitN.id; state.selectedEdgeId=null; state.selectedWallId=null;
       state.draggingNodeId=hitN.id;
       saveUndo();
     } else {
       const hitE = hitEdge(floor,x,y);
-      if (hitE) { state.selectedEdgeId=hitE.id; state.selectedNodeId=null; }
-      else { state.selectedNodeId=null; state.selectedEdgeId=null; }
+      if (hitE) {
+        state.selectedEdgeId=hitE.id; state.selectedNodeId=null; state.selectedWallId=null;
+      } else {
+        const hitW = hitWall(floor,x,y);
+        if (hitW) {
+          state.selectedWallId=hitW.id; state.selectedNodeId=null; state.selectedEdgeId=null;
+        } else {
+          state.selectedNodeId=null; state.selectedEdgeId=null; state.selectedWallId=null;
+        }
+      }
     }
     updateInspector(); renderCanvas(); return;
   }
@@ -1784,9 +1962,47 @@ canvas.addEventListener('mousedown', e => {
 });
 
 canvas.addEventListener('mouseup', e => {
+  if (e.button !== 0) return; // Hanya proses klik kiri
   if (state.draggingNodeId) autosave();
   state.isPanning=false; state.draggingNodeId=null;
+
+  // Selesaikan jika user menggunakan metode DRAG (jarak geser >= 0.2m)
+  if (state.tool === 'add-wall' && state.wallStartX !== null) {
+    const floor = currentFloor();
+    if (floor) {
+      const {x, y} = canvasXY(e);
+      const m = cToM(x, y);
+      const endX = snap(m.x);
+      const endY = snap(m.y);
+      const dist = Math.hypot(endX - state.wallStartX, endY - state.wallStartY);
+      if (dist >= 0.2) {
+        saveUndo();
+        floor.walls = floor.walls || [];
+        floor.walls.push({
+          id: genWallId(),
+          x1: +state.wallStartX.toFixed(3),
+          y1: +state.wallStartY.toFixed(3),
+          x2: +endX.toFixed(3),
+          y2: +endY.toFixed(3),
+        });
+        state.wallStartX = null;
+        state.wallStartY = null;
+        autosave();
+        toast('Tembok ditambahkan', 'success');
+        renderCanvas();
+      }
+      // Jika dist < 0.2, biarkan state.wallStartX tetap tersimpan untuk menunggu klik kedua (Click-to-Click)
+    }
+  }
+
   canvas.style.cursor = state.tool==='select' ? 'default' : 'crosshair';
+});
+
+// Penjaga global: lepas pan & dragging bila mouse lepas di luar canvas
+window.addEventListener('mouseup', () => {
+  if (state.draggingNodeId) autosave();
+  state.isPanning = false;
+  state.draggingNodeId = null;
 });
 
 canvas.addEventListener('wheel', e => {
@@ -1826,6 +2042,15 @@ document.addEventListener('keydown', e => {
   if (e.code==='Space' && !e.target.matches('input,select,textarea')) {
     state.spaceDown=true; canvas.style.cursor='grab'; e.preventDefault();
   }
+  if (e.key==='Escape') {
+    if (state.wallStartX !== null) {
+      state.wallStartX = null;
+      state.wallStartY = null;
+      renderCanvas();
+      toast('Gambar tembok dibatalkan', 'info');
+    }
+    closeFloatingEdgeInput();
+  }
   if (e.ctrlKey && e.key==='z') { e.preventDefault(); undo(); }
   if (e.ctrlKey && e.key==='y') { e.preventDefault(); redo(); }
   if (!e.ctrlKey && !e.target.matches('input,select,textarea')) {
@@ -1833,10 +2058,11 @@ document.addEventListener('keydown', e => {
     if (e.key==='2') setTool('connect');
     if (e.key==='3') setTool('select');
     if (e.key==='4') setTool('route');
-    if ((e.key==='Delete'||e.key==='Backspace') && state.tool==='select') {
-      e.preventDefault();
-      if (state.selectedNodeId) doDeleteNode();
-      else if (state.selectedEdgeId) doDeleteEdge();
+    if (e.key==='5') setTool('add-wall');
+    if (e.key==='Delete'||e.key==='Backspace') {
+      if (state.selectedNodeId) { e.preventDefault(); doDeleteNode(); }
+      else if (state.selectedEdgeId) { e.preventDefault(); doDeleteEdge(); }
+      else if (state.selectedWallId) { e.preventDefault(); doDeleteWall(); }
     }
   }
 });
@@ -1852,10 +2078,13 @@ const BANNERS = {
   'connect':  { text:'Mode: Hubung Jalur — Klik node A, lalu klik node B', color:'#ffd740' },
   'select':   { text:'Mode: Pilih & Geser — Klik pilih, drag untuk pindahkan, Del untuk hapus', color:'#bb86fc' },
   'route':    { text:'Mode: Uji Rute (A*) — Pilih node awal & tujuan di Inspector', color:'#00e676' },
+  'add-wall': { text:'Mode: Gambar Tembok — Drag mouse untuk menarik garis tembok', color:'#ff7043' },
 };
 
 function setTool(tool) {
   state.tool=tool; state.connectFromId=null;
+  state.wallStartX=null; state.wallStartY=null;
+  state.selectedWallId=null;
   document.getElementById('conn-hint').style.display='none';
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
   document.querySelector('[data-tool="'+tool+'"]')?.classList.add('active');
@@ -1883,6 +2112,10 @@ function updateInspector() {
     const e=floor.edges.find(ed=>ed.id===state.selectedEdgeId);
     if (e) { showEdgeInspector(e,floor); return; }
   }
+  if (state.selectedWallId) {
+    const w=(floor.walls||[]).find(wl=>wl.id===state.selectedWallId);
+    if (w) { showWallInspector(w,floor); return; }
+  }
   showNoneInspector();
 }
 
@@ -1890,12 +2123,14 @@ function showNoneInspector() {
   document.getElementById('insp-none').style.display='flex';
   document.getElementById('insp-node').style.display='none';
   document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-wall').style.display='none';
   document.getElementById('insp-route').style.display='none';
 }
 function showNodeInspector(n) {
   document.getElementById('insp-none').style.display='none';
   document.getElementById('insp-node').style.display='block';
   document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-wall').style.display='none';
   document.getElementById('insp-route').style.display='none';
   document.getElementById('node-id-input').value=n.id;
   document.getElementById('node-name-input').value=n.name||'';
@@ -1919,6 +2154,7 @@ function showEdgeInspector(e,floor) {
   document.getElementById('insp-none').style.display='none';
   document.getElementById('insp-node').style.display='none';
   document.getElementById('insp-edge').style.display='block';
+  document.getElementById('insp-wall').style.display='none';
   document.getElementById('insp-route').style.display='none';
   const nm={}; floor.nodes.forEach(n=>nm[n.id]=n);
   const nA=nm[e.from],nB=nm[e.to];
@@ -1939,10 +2175,21 @@ function showEdgeInspector(e,floor) {
     loopWarn.style.display = 'none';
   }
 }
+function showWallInspector(w, floor) {
+  document.getElementById('insp-none').style.display='none';
+  document.getElementById('insp-node').style.display='none';
+  document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-wall').style.display='block';
+  document.getElementById('insp-route').style.display='none';
+  document.getElementById('wall-id-input').value = w.id;
+  const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+  document.getElementById('wall-length-input').value = len.toFixed(2) + ' m';
+}
 function showRouteInspector() {
   document.getElementById('insp-none').style.display='none';
   document.getElementById('insp-node').style.display='none';
   document.getElementById('insp-edge').style.display='none';
+  document.getElementById('insp-wall').style.display='none';
   document.getElementById('insp-route').style.display='block';
 }
 
@@ -1982,8 +2229,17 @@ function doDeleteEdge() {
   closeFloatingEdgeInput();
   updateInspector(); updateStats(); renderCanvas(); autosave(); toast('Jalur dihapus','info');
 }
+function doDeleteWall() {
+  const floor = currentFloor();
+  if (!floor || !state.selectedWallId) return;
+  saveUndo();
+  floor.walls = (floor.walls || []).filter(w => w.id !== state.selectedWallId);
+  state.selectedWallId = null;
+  updateInspector(); updateStats(); renderCanvas(); autosave(); toast('Tembok dihapus', 'info');
+}
 document.getElementById('btn-delete-node').addEventListener('click', doDeleteNode);
 document.getElementById('btn-delete-edge').addEventListener('click', doDeleteEdge);
+document.getElementById('btn-delete-wall')?.addEventListener('click', doDeleteWall);
 
 // Edge distance input in inspector
 const edgeDistInput = document.getElementById('edge-dist-input');
@@ -2255,6 +2511,8 @@ function buildJSON() {
         id:f.id, name:f.name, width:f.width, length:f.length, northOffset:f.northOffset,
         nodes:f.nodes.map(n=>{const no={id:n.id,name:n.name,type:n.type,x:n.x,y:n.y};if(n.connectsTo)no.connectsTo=n.connectsTo;return no;}),
         edges:f.edges.map(e=>({id:e.id,from:e.from,to:e.to,distance:e.distance})),
+        walls:(f.walls||[]).map(w=>({id:w.id,x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2})),
+        doors:(f.doors||[]).map(d=>({id:d.id,x:d.x,y:d.y,width:d.width,rotation:d.rotation||0})),
       };
       if(incB64&&state.blueprints[f.id]?.b64) out.blueprint=state.blueprints[f.id].b64;
       return out;
@@ -2297,20 +2555,26 @@ document.getElementById('import-file-input').addEventListener('change',e=>{
         id:f.id, name:f.name||'Lantai', width:f.width||40, length:f.length||25, northOffset:f.northOffset||0,
         nodes:(f.nodes||[]).map(n=>({id:n.id,name:n.name||'',type:n.type||'junction',x:n.x,y:n.y,...(n.connectsTo?{connectsTo:n.connectsTo}:{})})),
         edges:(f.edges||[]).map(e=>({id:e.id,from:e.from,to:e.to,distance:e.distance||0})),
+        walls:(f.walls||[]).map(w=>({id:w.id,x1:w.x1,y1:w.y1,x2:w.x2,y2:w.y2})),
+        doors:(f.doors||[]).map(d=>({id:d.id,x:d.x,y:d.y,width:d.width,rotation:d.rotation||0})),
       }));
       // Restore blueprints if embedded
       data.floors.forEach(f=>{
         if(f.blueprint){const img=new Image();img.onload=()=>{state.blueprints[f.id]={img,b64:f.blueprint,alpha:.5};renderCanvas();};img.src=f.blueprint;}
       });
       // Recalc counters
-      let mn=0,me=0,mf=0;
+      let mn=0,me=0,mf=0,mw=0,md=0;
       state.floors.forEach(f=>{
         const fn=parseInt(f.id.replace('L',''))||0; if(fn>mf) mf=fn;
         f.nodes.forEach(n=>{const nn=parseInt(n.id.replace('n',''))||0;if(nn>mn)mn=nn;});
         f.edges.forEach(e=>{const en=parseInt(e.id.replace('e',''))||0;if(en>me)me=en;});
+        (f.walls||[]).forEach(w=>{const wn=parseInt((w.id||'').replace('w',''))||0;if(wn>mw)mw=wn;});
+        (f.doors||[]).forEach(d=>{const dn=parseInt((d.id||'').replace('d',''))||0;if(dn>md)md=dn;});
       });
       state.nodeCounter=mn; state.edgeCounter=me; state.floorCounter=mf;
+      state.wallCounter=mw; state.doorCounter=md;
       state.currentFloorIdx=0; state.selectedNodeId=null; state.selectedEdgeId=null; state.routePath=[];
+      state.wallStartX=null; state.wallStartY=null;
       updateFloorTabs(); updateFloorSettings(); updateStats(); updateInspector(); fitView(); autosave();
       toast('Import berhasil!','success');
     }catch(err){toast('Gagal import: '+err.message,'error');console.error(err);}
@@ -2364,7 +2628,9 @@ document.getElementById('btn-fit').addEventListener('click',fitView);
 function resetAll() {
   state.floors=[]; state.blueprints={};
   state.nodeCounter=0; state.edgeCounter=0; state.floorCounter=0;
-  state.selectedNodeId=null; state.selectedEdgeId=null; state.routePath=[];
+  state.wallCounter=0; state.doorCounter=0;
+  state.selectedNodeId=null; state.selectedEdgeId=null; state.selectedWallId=null; state.routePath=[];
+  state.wallStartX=null; state.wallStartY=null;
 }
 document.getElementById('btn-template-empty').addEventListener('click',()=>{
   if(state.floors.length>0&&!confirm('Ini akan menghapus semua data saat ini. Lanjutkan?')) return;
@@ -2498,6 +2764,8 @@ function pmSnapshotData() {
     nodeCounter: state.nodeCounter,
     edgeCounter: state.edgeCounter,
     floorCounter: state.floorCounter,
+    wallCounter: state.wallCounter || 0,
+    doorCounter: state.doorCounter || 0,
     currentFloorIdx: state.currentFloorIdx,
   };
 }
@@ -2508,6 +2776,8 @@ function pmRestoreData(data) {
   state.nodeCounter  = data.nodeCounter  || 0;
   state.edgeCounter  = data.edgeCounter  || 0;
   state.floorCounter = data.floorCounter || 0;
+  state.wallCounter  = data.wallCounter  || 0;
+  state.doorCounter  = data.doorCounter  || 0;
   state.currentFloorIdx = Math.min(data.currentFloorIdx || 0, Math.max(0, state.floors.length - 1));
 }
 
